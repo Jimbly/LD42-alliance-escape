@@ -25,3 +25,9 @@ Ludum Dare 42 - Running Out of Space
 Encounter mechanic possibilities:
   Maybe just have On/Off state, and it switches from On to Off if overheating,
     and *then* if it's turned back on, it'll go into "over" mode, and stay on, taking damage
+
+TODO:
+  Weapons fire / damage on the half-tick, so it's more visible on the bars
+    Or, increases are smooth/analog, decreases are discrete
+  Flash HP/Shield bar red when it goes down from damage
+  Enemies keep moving around

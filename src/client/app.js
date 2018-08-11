@@ -7,6 +7,7 @@
 
 const local_storage = require('./local_storage.js');
 const particle_data = require('./particle_data.js');
+const lodash = require('lodash');
 
 local_storage.storage_prefix = 'turbulenz-playground';
 window.Z = window.Z || {};
@@ -30,6 +31,7 @@ const SHIP_X = 18; // (game_width - SHIP_W);
 const SHIP_Y = 0;
 const TICK_FIRST = DEBUG ? 1000 : 5000;
 const TICK_EACH = DEBUG ? 1000 : 1000;
+const MAX_POWER = 2;
 
 const ENEMY_SHIP_X0 = game_width + 32;
 const ENEMY_SHIP_X1 = SHIP_X + SHIP_W + (game_width - SHIP_W - SHIP_X) / 2;
@@ -42,7 +44,14 @@ const HEAT_DELTA = [-5, 5, 20];
 const SHIELD_DELTA = [-5, 10, 40];
 const EVADE_DELTA = [-5/3, 10/3, 40/3];
 const CHARGE_DELTA = [-5, 10, 40];
+const O2PROD_DELTA = [-25, 25];
+const GEN_DELTA = [-0.5, 1];
+const POWER_BASE = 3;
 const OVERHEAT_DAMAGE = -5;
+const OVERHEAT_TICKS = 5;
+
+const REPAIR_FACTOR = 5;
+const REPAIR_SIZE = 5;
 
 export function main(canvas)
 {
@@ -130,6 +139,18 @@ export function main(canvas)
       max: 100,
       label: 'CHARGE',
     },
+    'gen': {
+      max: 6,
+      label: 'POWER',
+    },
+    'o2': {
+      max: 100,
+      label: 'O2 PROD'
+    },
+    'cargo': {
+      start: 20,
+      max: 20,
+    },
   };
   let panel_types = {
     engine: {
@@ -141,13 +162,37 @@ export function main(canvas)
     weapon: {
       values: ['heat', 'charge', 'hp'],
     },
+    gen: {
+      values: ['heat', 'gen', 'hp'],
+      vert: true,
+    },
+    repair: {
+      values: [null, 'hp', null],
+      vert: true,
+    },
+    life: {
+      values: ['heat', 'o2', 'hp'],
+    },
+    cargo: {
+      values: ['cargo'],
+    },
   };
 
   let ship_slots = [
-    { pos: [162, 32], start: 'weapon' },
+    { pos: [162 - 4, 32 - 8], start: 'weapon' },
+    { pos: [162, 64 - 8], start: 'weapon' },
+    { pos: [162, 192 + 8], start: 'weapon' },
+    { pos: [162 - 4, 224 + 8], start: 'weapon' },
     { pos: [194, 96], start: 'engine' },
+    { pos: [194, 128], start: 'engine' },
+    { pos: [194, 160], start: 'engine' },
     { pos: [66, 96], start: 'shield' },
-    // { pos: [162, 96], start: 'gen' },
+    { pos: [66, 128], start: 'cargo' },
+    { pos: [66, 160], start: 'shield' },
+    { pos: [162, 96], start: 'gen' },
+    { pos: [130, 96], start: 'repair' },
+    { pos: [34, 112], start: 'gen' },
+    { pos: [130, 160], start: 'life' },
   ];
 
   let state;
@@ -194,9 +239,10 @@ export function main(canvas)
 
     sprites.panel_bgs = {};
     for (let type in panel_types) {
-      sprites.panel_bgs[type] = loadSprite('panel-' + type + '.png', PANEL_W, PANEL_H, origin_0_0);
+      sprites.panel_bgs[type] = loadSprite('panel-' + type + '.png', panel_types[type].vert ? PANEL_H : PANEL_W, panel_types[type].vert ? PANEL_W : PANEL_H, origin_0_0);
     }
     sprites.panel_destroyed = loadSprite('panel-destroyed.png', PANEL_W, PANEL_H, origin_0_0);
+    sprites.panel_destroyed_vert = loadSprite('panel-destroyed-vert.png', PANEL_H, PANEL_W, origin_0_0);
 
     // sprites.test_animated = loadSprite('test_sprite.png', [13, 13], [13, 13]);
     // sprites.animation = createAnimation({
@@ -269,9 +315,9 @@ export function main(canvas)
     });
   }
 
-  function colorFromTypeAndValue(type, value) {
+  function colorFromTypeAndValue(slot, type, value) {
     if (type === 'heat') {
-      if (value > 0.875) {
+      if (value > 0.875 && !state.wave.won && slot.power) {
         return pico8_colors[8 + (Math.round(glov_engine.getFrameTimestamp() / 150) % 2) * 2];
       }
       value = 1 - value;
@@ -307,10 +353,15 @@ export function main(canvas)
 
   function calcShipStats() {
     let stats = {};
+    stats.gen = POWER_BASE;
+    stats.power = 0;
     for (let ii = 0; ii < state.slots.length; ++ii) {
       let slot = state.slots[ii];
       if (!slot.hp) {
         continue;
+      }
+      if (slot.type !== 'gen' && slot.power) {
+        stats.power += slot.power;
       }
       let slot_type_def = panel_types[slot.type];
       for (let jj = 0; jj < slot_type_def.values.length; ++jj) {
@@ -321,6 +372,7 @@ export function main(canvas)
         }
       }
     }
+    stats.gen = Math.floor(stats.gen);
     return stats;
   }
 
@@ -332,12 +384,10 @@ export function main(canvas)
     if (!state.wave.ships.filter(hasHP).length) {
       // we've won!
       log('Encounter won!');
+      state.wave.won = true;
       for (let ii = 0; ii < state.slots.length; ++ii) {
         let slot = state.slots[ii];
         slot.fire_at = null;
-        if (slot.heat) {
-          slot.heat = Math.min(slot.heat, value_defs.heat.max / 2);
-        }
       }
       return;
     }
@@ -349,12 +399,24 @@ export function main(canvas)
       }
       if (slot.heat !== undefined) {
         slot.heat += HEAT_DELTA[slot.power];
-        slot.heat = Math.min(Math.max(slot.heat, 0), value_defs.heat.max);
-        if (slot.heat === value_defs.heat.max) {
+        slot.heat = Math.max(slot.heat, 0);
+        if (slot.heat > value_defs.heat.max) {
+          let extra = slot.heat - value_defs.heat.max; // TODO: scale damage?
+          slot.heat = value_defs.heat.max;
           slot.hp = Math.max(slot.hp + OVERHEAT_DAMAGE, 0);
           if (!slot.hp) {
             log(slot.type.toUpperCase() + ' destroyed by HEAT');
             continue;
+          }
+          slot.heat_damage++;
+          if (slot.heat_damage === OVERHEAT_TICKS) {
+            slot.power = 0;
+            slot.autocool = true;
+          }
+        } else {
+          slot.heat_damage = 0;
+          if (slot.autocool && slot.heat < value_defs.heat.max / 2) {
+            slot.autocool = false;
           }
         }
       }
@@ -365,6 +427,27 @@ export function main(canvas)
         case 'engine':
           slot.evade = Math.min(Math.max(slot.evade + EVADE_DELTA[slot.power], 0), value_defs.evade.max);
           break;
+        case 'life':
+          slot.o2 = Math.min(Math.max(slot.o2 + O2PROD_DELTA[slot.power], 0), value_defs.o2.max);
+          break;
+        case 'repair':
+          if (slot.power && slot.hp) {
+            let repair_spend = Math.min(slot.hp, REPAIR_SIZE);
+            // Look for other slot that is damaged
+            let targets = state.slots.filter(function (slot) {
+              return slot.type !== 'repair' && slot.hp && slot.hp < value_defs.hp.max - REPAIR_FACTOR * repair_spend;
+            });
+            if (targets.length) {
+              let target_slot = targets[Math.floor(Math.random() * targets.length)];
+              slot.hp -= repair_spend;
+              target_slot.hp += repair_spend * REPAIR_FACTOR;
+            }
+          }
+          break;
+        case 'gen':
+          slot.gen = Math.min(Math.max(slot.gen + GEN_DELTA[slot.power], 0), value_defs.gen.max);
+          break;
+
         case 'weapon':
           slot.fire_at = null;
           if (slot.charge === value_defs.charge.max) {
@@ -382,8 +465,47 @@ export function main(canvas)
           break;
       }
     }
-    // Do enemy waves
+
     let ship_stats = calcShipStats();
+
+    while (ship_stats.power > ship_stats.gen) {
+      let idx = state.on_priority.pop();
+      let slot = state.slots[idx];
+      assert(slot.power);
+      ship_stats.power -= slot.power;
+      slot.power = 0;
+      slot.autooff = true;
+    }
+
+    if (ship_stats.power < ship_stats.gen) {
+      for (let ii = 0; ii < state.slots.length; ++ii) {
+        let slot = state.slots[ii];
+        if (slot.autooff) {
+          slot.autooff = false;
+          slot.power = 1;
+          ship_stats.power++;
+          state.on_priority.push(ii);
+          if (ship_stats.power >= ship_stats.gen) {
+            break;
+          }
+        }
+      }
+    }
+
+    const O2_CONSUMPTION = 2;
+    const O2_PROD_FACTOR = O2_CONSUMPTION * 4 / 100;
+    state.o2 = (state.o2 - O2_CONSUMPTION) + ship_stats.o2 * O2_PROD_FACTOR;
+    state.o2 = Math.max(Math.min(state.o2, 100), 0);
+    if (state.o2 === 0) {
+      // pick a random slot, kill a passenger
+      let targets = state.slots.filter(hasHP);
+      let slot = targets[Math.floor(Math.random() * targets.length)];
+      if (slot.cargo) {
+        --slot.cargo;
+      }
+    }
+
+    // Do enemy waves
     let evade = (ship_stats.evade || 0) / 100;
     for (let ii = 0; ii < state.wave.ships.length; ++ii) {
       let ship = state.wave.ships[ii];
@@ -403,6 +525,7 @@ export function main(canvas)
         log('Enemy misses!');
         damage = 0;
         ship.fire_at = [SHIP_W, SHIP_H / 2];
+        ship.fire_at_vert = true;
       }
       // if any damage left and there's a shield generator, target it
       for (let jj = 0; damage && jj < state.slots.length; ++jj) {
@@ -411,7 +534,11 @@ export function main(canvas)
           continue;
         }
         if (!ship.fire_at) {
-          ship.fire_at = [ship_slots[jj].pos[0] + PANEL_W / 2, ship_slots[jj].pos[1] + PANEL_H / 2];
+          ship.fire_at = [
+            ship_slots[jj].pos[0] + (panel_types[slot.type].vert ? PANEL_H : PANEL_W) / 2,
+            ship_slots[jj].pos[1] + (panel_types[slot.type].vert ? PANEL_W : PANEL_H) / 2
+          ];
+          ship.fire_at_vert = panel_types[slot.type].vert;
         }
         if (damage >= slot.shield) {
           damage -= slot.shield;
@@ -428,9 +555,14 @@ export function main(canvas)
         if (!targets.length) {
           // TODO
           log('Ship destroyed');
+          break;
         } else {
           let slot = targets[Math.floor(Math.random() * targets.length)];
-          ship.fire_at = [ship_slots[slot.idx].pos[0] + PANEL_W / 2, ship_slots[slot.idx].pos[1] + PANEL_H / 2];
+          ship.fire_at = [
+            ship_slots[slot.idx].pos[0] + (panel_types[slot.type].vert ? PANEL_H : PANEL_W) / 2,
+            ship_slots[slot.idx].pos[1] + (panel_types[slot.type].vert ? PANEL_W : PANEL_H) / 2
+          ];
+          ship.fire_at_vert = panel_types[slot.type].vert;
           assert(slot.hp);
           if (damage >= slot.hp) {
             log(slot.type.toUpperCase() + ' destroyed by ENEMY');
@@ -445,19 +577,20 @@ export function main(canvas)
     }
   }
 
-  function drawFire(is_player, x0, y0, x1, y1) {
+  function drawFire(is_player, is_vert, x0, y0, x1, y1) {
     for (let ii = 0; ii < 4; ++ii) {
       glov_ui.drawLine(
         x0,
         y0 + Math.random() * 4 - 2,
-        x1 + Math.random() * 16 - 4,
-        y1 + Math.random() * 8 - 4,
+        x1 + Math.random() * (is_vert ? 8 : 16) - 4,
+        y1 + Math.random() * (is_vert ? 16 : 8) - 4,
         Z.ENEMY + 1, 2, 0.95, pico8_colors[8 + Math.floor(Math.random() * 2) + (is_player ? 3 : 0)]
       );
     }
   }
 
   function drawSlots(dt) {
+    let stats = calcShipStats();
     for (let ii = 0; ii < state.slots.length; ++ii) {
       let slot = state.slots[ii];
       let pos = ship_slots[ii].pos;
@@ -466,24 +599,59 @@ export function main(canvas)
       let y = SHIP_Y + pos[1];
       sprites.panel_bgs[slot.type].draw({
         x, y, z: Z.SHIP + 1,
-        size: [PANEL_W, PANEL_H],
+        size: [slot_type_def.vert ? PANEL_H : PANEL_W, slot_type_def.vert ? PANEL_W : PANEL_H],
         frame: 0,
       });
+      if (slot.type === 'cargo') {
+        // TODO: draw people moving around
+        continue;
+      }
       if (slot.hp) {
         let button_rect = {
           x, y, w: PANEL_W, h: PANEL_H
         };
+        if (slot_type_def.vert) {
+          button_rect.w = PANEL_H;
+          button_rect.h = PANEL_W;
+        }
         let over = 0;
-        if (glov_input.clickHit(button_rect)) {
-          slot.power = (slot.power + 1) % 3;
-          over = 1;
-        } else if (glov_input.isMouseOver(button_rect)) {
-          over = 1;
+        let disabled = !slot.power && stats.power >= stats.gen && slot.type !== 'gen' && !slot.autooff;
+        if (slot.autocool) {
+          // not interactable
+        } else {
+          let clicked = false;
+          if (!disabled && glov_input.clickHit(button_rect)) {
+            if (slot.autooff) {
+              slot.autooff = false;
+              slot.power = 0;
+            } else {
+              slot.power = (slot.power + 1) % MAX_POWER;
+            }
+            over = 1;
+            clicked = true;
+          } else if (!disabled && glov_input.clickHit(lodash.merge({ button: 1 }, button_rect))) {
+            slot.power = (slot.power -1 + MAX_POWER) % MAX_POWER;
+            over = 1;
+            clicked = true;
+          } else if (glov_input.isMouseOver(button_rect)) {
+            over = 1;
+          }
+          if (clicked) {
+            let idx = state.on_priority.indexOf(ii);
+            if (idx !== -1) {
+              state.on_priority.splice(idx, 1);
+            }
+            if (slot.power) {
+              state.on_priority.push(ii);
+            }
+          }
         }
         sprites.toggles.draw({
-          x, y, z: Z.SHIP + 2,
+          x: x + (slot_type_def.vert ? 2 : 0),
+          y: y + (slot_type_def.vert ? 32 : 0),
+          z: Z.SHIP + 2,
           size: [PANEL_H, PANEL_H],
-          frame: slot.power * 2 + over,
+          frame: slot.autooff || disabled && over ? 7 : slot.autocool ? 6 : (slot.power * 2 + over),
         });
         for (let jj = 0; jj < slot_type_def.values.length; ++jj) {
           let value_type = slot_type_def.values[jj];
@@ -491,26 +659,37 @@ export function main(canvas)
             let v = slot[value_type];
             let max = value_defs[value_type].max;
             let label = value_defs[value_type].label;
-            let bar_x = x + 25;
-            let bar_y = y + 8 * jj + 7;
-            let bar_w = 36 * v / max;
+            let bar_x = slot_type_def.vert ? x + jj * 8 + 4 : x + 25;
+            let bar_y = slot_type_def.vert ? y + 39 : y + 8 * jj + 7;
+            let bar_w = (slot_type_def.vert ? 31 : 36) * v / max;
             let bar_h = 7;
-            let color = colorFromTypeAndValue(value_type, v / max);
+            let color = colorFromTypeAndValue(slot, value_type, v / max);
             if (bar_w) {
-              glov_ui.drawRect(bar_x, bar_y, bar_x + bar_w, bar_y + bar_h, Z.SHIP + 3, color);
+              if (slot_type_def.vert) {
+                glov_ui.drawRect(bar_x, bar_y, bar_x + bar_h, bar_y - bar_w, Z.SHIP + 3, color);
+              } else {
+                glov_ui.drawRect(bar_x, bar_y, bar_x + bar_w, bar_y + bar_h, Z.SHIP + 3, color);
+              }
             }
-            glov_ui.print(style_value, bar_x + 1, bar_y - 1, Z.SHIP + 4, label);
+            if (slot_type_def.vert) {
+              font.drawSizedAligned(style_value, x + 4, bar_y - (3 - jj) * 10, Z.SHIP + 4, glov_ui.font_height,
+                [glov_font.ALIGN.HLEFT, glov_font.ALIGN.HCENTER, glov_font.ALIGN.HRIGHT][jj],
+                24, 0,
+                label);
+            } else {
+              glov_ui.print(style_value, bar_x + 1, bar_y - 1, Z.SHIP + 4, label);
+            }
           }
         }
         if (slot.fire_at) {
           // TODO: display guns
-          drawFire(true, x + 40, y + PANEL_H / 2, slot.fire_at[0], slot.fire_at[1]);
+          drawFire(true, false, x + 40, y + PANEL_H / 2, slot.fire_at[0], slot.fire_at[1]);
         }
       } else {
         // no HP
-        sprites.panel_destroyed.draw({
+        sprites['panel_destroyed' + (slot_type_def.vert ? '_vert' : '')].draw({
           x, y, z: Z.SHIP + 2,
-          size: [PANEL_W, PANEL_H],
+          size: [slot_type_def.vert ? PANEL_H : PANEL_W, slot_type_def.vert ? PANEL_W : PANEL_H],
           frame: 0,
         });
       }
@@ -534,7 +713,7 @@ export function main(canvas)
       });
 
       if (ship.fire_at) {
-        drawFire(false, ship.x - ENEMY_SHIP_H / 2 + 2, ship.y,
+        drawFire(false, ship.fire_at_vert, ship.x - ENEMY_SHIP_H / 2 + 2, ship.y,
           SHIP_X + ship.fire_at[0], SHIP_Y + ship.fire_at[1]);
       }
     }
@@ -545,14 +724,18 @@ export function main(canvas)
     let y0 = 2;
     let x = x0;
     let y = y0;
-    let size = 16;
-    let y_adv = 15;
+    let size = 16 * 0.75;
+    let y_adv = 15 * 0.75;
 
     font.drawSized(style_summary, x, y, Z.UI + 1, size, 'SHIP SUMMARY');
     x += size;
     y += y_adv;
     let stats = calcShipStats();
+    font.drawSized(style_summary, x, y, Z.UI + 1, size, `${stats.power || 0} / ${stats.gen || 0} Power`);
+    y += y_adv;
     font.drawSized(style_summary, x, y, Z.UI + 1, size, `${stats.cargo || 0} Refugees`);
+    y += y_adv;
+    font.drawSized(style_summary, x, y, Z.UI + 1, size, `${(state.o2 || 0).toFixed(0)} O2 Supply`);
     y += y_adv;
     font.drawSized(style_summary, x, y, Z.UI + 1, size, `${stats.shield || 0} Shield`);
     y += y_adv;
@@ -560,6 +743,9 @@ export function main(canvas)
     y += y_adv;
 
     y += 4;
+    if (state.messages.length > 2) {
+      state.messages = state.messages.slice(-2);
+    }
     for (let ii = Math.max(0, state.messages.length - 2); ii < state.messages.length; ++ii) {
       glov_ui.print(style_summary, x0, y, Z.UI + 1, state.messages[ii]);
       y += glov_ui.font_height;
@@ -578,8 +764,8 @@ export function main(canvas)
     let y0 = game_height - 49;
     let x = x0;
     let y = y0;
-    let size = 16;
-    let y_adv = 15;
+    let size = 16 * 0.75;
+    let y_adv = 15 * 0.75;
 
     font.drawSized(style_summary, x, y, Z.UI + 1, size, 'WAVE SUMMARY');
     x += size;
@@ -649,7 +835,7 @@ export function main(canvas)
   }
 
   function nextWave() {
-    let num_ships = 6;
+    let num_ships = 2;
     let max_hp = 4;
     let damage = 5;
     state.wave = {
@@ -674,18 +860,22 @@ export function main(canvas)
       tick_countdown: TICK_FIRST,
       slots: [],
       messages: [],
+      o2: 80,
+      on_priority: [],
     };
     for (let ii = 0; ii < ship_slots.length; ++ii) {
       let slot = {
         type: ship_slots[ii].start,
         power: 0, // 0/1/2 = off/on/over
-        heat: 0,
+        heat_damage: 0,
         hp: 100,
         idx: ii,
       };
       let slot_type_def = panel_types[slot.type];
       for (let jj = 0; jj < slot_type_def.values.length; ++jj) {
-        slot[slot_type_def.values[jj]] = value_defs[slot_type_def.values[jj]].start || 0;
+        if (slot_type_def.values[jj]) {
+          slot[slot_type_def.values[jj]] = value_defs[slot_type_def.values[jj]].start || 0;
+        }
       }
       state.slots.push(slot);
     }
