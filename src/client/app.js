@@ -30,7 +30,7 @@ const PANEL_H = 32;
 const SHIP_X = 18; // (game_width - SHIP_W);
 const SHIP_Y = 0;
 const TICK_FIRST = DEBUG ? 1000 : 5000;
-const TICK_EACH = DEBUG ? 1000 : 1000;
+const TICK_EACH = DEBUG ? 200 : 1000;
 const MAX_POWER = 2;
 
 const ENEMY_SHIP_X0 = game_width + 32;
@@ -141,7 +141,7 @@ export function main(canvas)
     },
     'gen': {
       max: 6,
-      label: 'POWER',
+      label: 'PWR',
     },
     'o2': {
       max: 100,
@@ -315,14 +315,26 @@ export function main(canvas)
     });
   }
 
+  // 0 = green
+  // 1 = yellow
+  // 2 = orage
+  // 3 = red
+  // 4 = flashing red
+  function colorIndex(idx) {
+    if (idx === 4) {
+      return 8 + (Math.round(glov_engine.getFrameTimestamp() / 150) % 2) * 2;
+    }
+    return 11 - idx;
+  }
+
   function colorFromTypeAndValue(slot, type, value) {
     if (type === 'heat') {
       if (value > 0.875 && !state.wave.won && slot.power) {
-        return pico8_colors[8 + (Math.round(glov_engine.getFrameTimestamp() / 150) % 2) * 2];
+        return pico8_colors[colorIndex(4)];
       }
       value = 1 - value;
     }
-    return pico8_colors[8 + Math.min(Math.floor(value * 8), 3)];
+    return pico8_colors[colorIndex(3 - Math.min(Math.floor(value * 8), 3))];
   }
 
   let style_value = glov_font.style(null, {
@@ -355,6 +367,7 @@ export function main(canvas)
     let stats = {};
     stats.gen = POWER_BASE;
     stats.power = 0;
+    stats.o2 = 0;
     for (let ii = 0; ii < state.slots.length; ++ii) {
       let slot = state.slots[ii];
       if (!slot.hp) {
@@ -377,7 +390,7 @@ export function main(canvas)
   }
 
   function hasHP(elem) {
-    return elem.hp > 0;
+    return elem.type === 'cargo' ? elem.cargo > 0 : elem.hp > 0;
   }
 
   function doTick() {
@@ -499,9 +512,11 @@ export function main(canvas)
     if (state.o2 === 0) {
       // pick a random slot, kill a passenger
       let targets = state.slots.filter(hasHP);
-      let slot = targets[Math.floor(Math.random() * targets.length)];
-      if (slot.cargo) {
-        --slot.cargo;
+      if (targets.length) {
+        let slot = targets[Math.floor(Math.random() * targets.length)];
+        if (slot.cargo) {
+          --slot.cargo;
+        }
       }
     }
 
@@ -564,7 +579,9 @@ export function main(canvas)
           ];
           ship.fire_at_vert = panel_types[slot.type].vert;
           assert(slot.hp);
-          if (damage >= slot.hp) {
+          if (slot.type === 'cargo') {
+            slot.cargo = Math.max(0, slot.cargo - Math.ceil(damage / 5));
+          } else if (damage >= slot.hp) {
             log(slot.type.toUpperCase() + ' destroyed by ENEMY');
             slot.hp = 0;
           } else {
@@ -597,20 +614,24 @@ export function main(canvas)
       let slot_type_def = panel_types[slot.type];
       let x = SHIP_X + pos[0];
       let y = SHIP_Y + pos[1];
+      let vert = slot_type_def.vert; // TODO : get right value for cargo replacing vertical slot
       sprites.panel_bgs[slot.type].draw({
         x, y, z: Z.SHIP + 1,
-        size: [slot_type_def.vert ? PANEL_H : PANEL_W, slot_type_def.vert ? PANEL_W : PANEL_H],
+        size: [vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H],
         frame: 0,
       });
       if (slot.type === 'cargo') {
         // TODO: draw people moving around
+        font.drawSizedAligned(style_value, x, y, Z.SHIP + 4, glov_ui.font_height,
+          glov_font.ALIGN.HVCENTER, vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H,
+          slot.cargo.toString());
         continue;
       }
       if (slot.hp) {
         let button_rect = {
           x, y, w: PANEL_W, h: PANEL_H
         };
-        if (slot_type_def.vert) {
+        if (vert) {
           button_rect.w = PANEL_H;
           button_rect.h = PANEL_W;
         }
@@ -647,8 +668,8 @@ export function main(canvas)
           }
         }
         sprites.toggles.draw({
-          x: x + (slot_type_def.vert ? 2 : 0),
-          y: y + (slot_type_def.vert ? 32 : 0),
+          x: x + (vert ? 2 : 0),
+          y: y + (vert ? 32 : 0),
           z: Z.SHIP + 2,
           size: [PANEL_H, PANEL_H],
           frame: slot.autooff || disabled && over ? 7 : slot.autocool ? 6 : (slot.power * 2 + over),
@@ -659,19 +680,19 @@ export function main(canvas)
             let v = slot[value_type];
             let max = value_defs[value_type].max;
             let label = value_defs[value_type].label;
-            let bar_x = slot_type_def.vert ? x + jj * 8 + 4 : x + 25;
-            let bar_y = slot_type_def.vert ? y + 39 : y + 8 * jj + 7;
-            let bar_w = (slot_type_def.vert ? 31 : 36) * v / max;
+            let bar_x = vert ? x + jj * 8 + 4 : x + 25;
+            let bar_y = vert ? y + 39 : y + 8 * jj + 7;
+            let bar_w = (vert ? 31 : 36) * v / max;
             let bar_h = 7;
             let color = colorFromTypeAndValue(slot, value_type, v / max);
             if (bar_w) {
-              if (slot_type_def.vert) {
+              if (vert) {
                 glov_ui.drawRect(bar_x, bar_y, bar_x + bar_h, bar_y - bar_w, Z.SHIP + 3, color);
               } else {
                 glov_ui.drawRect(bar_x, bar_y, bar_x + bar_w, bar_y + bar_h, Z.SHIP + 3, color);
               }
             }
-            if (slot_type_def.vert) {
+            if (vert) {
               font.drawSizedAligned(style_value, x + 4, bar_y - (3 - jj) * 10, Z.SHIP + 4, glov_ui.font_height,
                 [glov_font.ALIGN.HLEFT, glov_font.ALIGN.HCENTER, glov_font.ALIGN.HRIGHT][jj],
                 24, 0,
@@ -687,7 +708,7 @@ export function main(canvas)
         }
       } else {
         // no HP
-        sprites['panel_destroyed' + (slot_type_def.vert ? '_vert' : '')].draw({
+        sprites['panel_destroyed' + (vert ? '_vert' : '')].draw({
           x, y, z: Z.SHIP + 2,
           size: [slot_type_def.vert ? PANEL_H : PANEL_W, slot_type_def.vert ? PANEL_W : PANEL_H],
           frame: 0,
@@ -719,6 +740,12 @@ export function main(canvas)
     }
   }
 
+  function drawBar(x, y, w, h, value, bg_color, bar_color) {
+    value = Math.min(value, 1);
+    glov_ui.drawRect(x, y, x + w, y + h, Z.UI + 1, pico8_colors[bg_color]);
+    glov_ui.drawRect(x, y, x + w * value, y + h, Z.UI + 2, pico8_colors[bar_color]);
+  }
+
   function drawShipSummary(dt) {
     let x0 = 6;
     let y0 = 2;
@@ -726,20 +753,31 @@ export function main(canvas)
     let y = y0;
     let size = 16 * 0.75;
     let y_adv = 15 * 0.75;
+    let bar_x = x + size - 4;
+    let bar_y_offs = 2 * 0.75;
+    let bar_h = 14 * 0.75;
+    let bar_w = 100;
+    let z_text = Z.UI + 3;
 
-    font.drawSized(style_summary, x, y, Z.UI + 1, size, 'SHIP SUMMARY');
+    font.drawSized(style_summary, x, y, z_text, size, 'SHIP SUMMARY');
     x += size;
     y += y_adv;
     let stats = calcShipStats();
-    font.drawSized(style_summary, x, y, Z.UI + 1, size, `${stats.power || 0} / ${stats.gen || 0} Power`);
+    font.drawSized(style_summary, x, y, z_text, size, `${stats.power} / ${stats.gen} PWR`);
+    drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, stats.power / stats.gen, 1, colorIndex(Math.max(0, 3 - (stats.gen - stats.power))));
     y += y_adv;
-    font.drawSized(style_summary, x, y, Z.UI + 1, size, `${stats.cargo || 0} Refugees`);
+    font.drawSized(style_summary, x, y, z_text, size, `${state.o2.toFixed(0)}% O2 SUPPLY`);
+    drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, state.o2 / 100, (state.o2 >= 4 * 6) ? 1 : colorIndex(4 - Math.min(4, Math.floor(state.o2 / 6))), 11);
     y += y_adv;
-    font.drawSized(style_summary, x, y, Z.UI + 1, size, `${(state.o2 || 0).toFixed(0)} O2 Supply`);
+    font.drawSized(style_summary, x, y, z_text, size, `${stats.shield || 0} Shield`);
+    drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, stats.shield / (state.wave.num_ships * state.wave.damage * 2),
+      stats.shield <= state.wave.damage ? 8 : 1, 12);
     y += y_adv;
-    font.drawSized(style_summary, x, y, Z.UI + 1, size, `${stats.shield || 0} Shield`);
+    font.drawSized(style_summary, x, y, z_text, size, `${(stats.evade || 0).toFixed(0)}% Evade`);
+    drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, stats.evade / 100,
+      1, 11);
     y += y_adv;
-    font.drawSized(style_summary, x, y, Z.UI + 1, size, `${(stats.evade || 0).toFixed(0)}% Evade`);
+    font.drawSized(style_summary, x, y, z_text, size, `${stats.cargo || 0} Refugees`);
     y += y_adv;
 
     y += 4;
@@ -747,7 +785,7 @@ export function main(canvas)
       state.messages = state.messages.slice(-2);
     }
     for (let ii = Math.max(0, state.messages.length - 2); ii < state.messages.length; ++ii) {
-      glov_ui.print(style_summary, x0, y, Z.UI + 1, state.messages[ii]);
+      glov_ui.print(style_summary, x0, y, z_text, state.messages[ii]);
       y += glov_ui.font_height;
     }
 
