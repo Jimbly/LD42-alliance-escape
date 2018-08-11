@@ -2,16 +2,17 @@ Ludum Dare 42 - Running Out of Space
 ============================
 
 * Intro
+* Load last piece of equipment
+* Tutorial Encounter Phase
+* The Choice
+* Manage Phase: Settle / Load / Continue
 * Encounter Phase
 * Special Event Phase
-* Manage Phase
-* Repeat
+* Repeat to Manage Phase
 
-
+TODO
 * Encounter Phase
-  * Each non-cargo node can be toggled between 2-3 states
-    * If power capacity is exceeded, reset the *last toggled* nodes to OFF until OK
-  * Waves of enemies attack the ship and are resolved
+  * Multiple waves before manager phase?
   * If die, restart from beginning, or allow retrying the wave a couple times?
 * Manage Phase
   * See data on next wave
@@ -23,11 +24,12 @@ Ludum Dare 42 - Running Out of Space
 
 
 Encounter mechanic possibilities:
-  Maybe just have On/Off state, and it switches from On to Off if overheating,
-    and *then* if it's turned back on, it'll go into "over" mode, and stay on, taking damage
+  Some way to over-power nodes again?
 
 TODO:
   Weapons fire / damage on the half-tick, so it's more visible on the bars
     Or, increases are smooth/analog, decreases are discrete
   Flash HP/Shield bar red when it goes down from damage
   Enemies keep moving around
+  Track total deaths
+  Borders

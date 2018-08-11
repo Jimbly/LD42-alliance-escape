@@ -23,21 +23,38 @@ let app = exports;
 export const game_width = 384;
 export const game_height = 288;
 
+const chapters = [
+  null,
+  { no_passengers : true, special: true },
+  { special: true },
+  { special: true },
+  { special: true, replace_shield_40: true },
+  { special: true },
+];
+
 const SHIP_W = 288;
 const SHIP_H = 288;
 const PANEL_W = 64;
 const PANEL_H = 32;
-const SHIP_X = 18; // (game_width - SHIP_W);
+const SHIP_TRANSITION_TIME = 1000;
+const SHIP_X_ENCOUNTER = 18;
+const SHIP_X_MANAGE = (game_width - SHIP_W) + 18;
+const SHIP_X_INTRO = (game_width - SHIP_W) / 3;
+let ship_x_prev = SHIP_X_ENCOUNTER;
+let ship_x_desired = SHIP_X_ENCOUNTER;
+let SHIP_X = SHIP_X_ENCOUNTER;
+let time_in_state = 0;
 const SHIP_Y = 0;
-const TICK_FIRST = DEBUG ? 1000 : 5000;
-const TICK_EACH = DEBUG ? 200 : 1000;
+const TICK_FIRST = DEBUG ? 5000 : 5000;
+const TICK_EACH = DEBUG ? 1000 : 1000;
 const MAX_POWER = 2;
 
-const ENEMY_SHIP_X0 = game_width + 32;
+const ENEMY_SHIP_X0 = game_width + 64;
 const ENEMY_SHIP_X1 = SHIP_X + SHIP_W + (game_width - SHIP_W - SHIP_X) / 2;
 const ENEMY_SHIP_H = 64;
 const ENEMY_SHIP_SPEED = 40 / 1000; // pixels / ms
 const ENEMY_INITIAL_COUNTDOWN = DEBUG ? 0 : 5; // ticks
+const WIN_COUNTDOWN = DEBUG ? 1 : 5; // ticks
 
 const HEAT_DELTA = [-5, 5, 20];
 
@@ -57,6 +74,7 @@ export function main(canvas)
 {
   const glov_engine = require('./glov/engine.js');
   const glov_font = require('./glov/font.js');
+  const util = require('./glov/util.js');
 
   glov_engine.startup({
     canvas,
@@ -119,6 +137,7 @@ export function main(canvas)
 
   let value_defs = {
     'heat': {
+      port: 0,
       max: 100,
       label: 'HEAT',
     },
@@ -128,50 +147,62 @@ export function main(canvas)
       label: 'HP',
     },
     'evade': {
+      port: 0,
       max: 33,
       label: 'EVADE',
     },
     'shield': {
+      start: 0,
+      port: 0,
       max: 100,
       label: 'SHIELD',
     },
     'charge': {
+      port: 0,
       max: 100,
       label: 'CHARGE',
     },
     'gen': {
+      port: 0,
       max: 6,
       label: 'PWR',
     },
     'o2': {
+      port: 0,
       max: 100,
       label: 'O2 PROD'
     },
     'cargo': {
-      start: 20,
+      start: 0,
       max: 20,
     },
   };
   let panel_types = {
     engine: {
       values: ['heat', 'evade', 'hp'],
+      name: 'ENGINE',
     },
     shield: {
       values: ['heat', 'shield', 'hp'],
+      name: 'SHIELD GENERATOR',
     },
     weapon: {
       values: ['heat', 'charge', 'hp'],
+      name: 'WEAPON',
     },
     gen: {
       values: ['heat', 'gen', 'hp'],
       vert: true,
+      name: 'POWER GENERATOR',
     },
     repair: {
       values: [null, 'hp', null],
       vert: true,
+      name: 'REPAIR DRONE',
     },
     life: {
       values: ['heat', 'o2', 'hp'],
+      name: 'LIFE SUPPORT',
     },
     cargo: {
       values: ['cargo'],
@@ -238,11 +269,20 @@ export function main(canvas)
     sprites.toggles = loadSprite('toggles.png', [32, 32], [32, 32, 32, 32], origin_0_0);
 
     sprites.panel_bgs = {};
+    sprites.panel_help = {};
     for (let type in panel_types) {
       sprites.panel_bgs[type] = loadSprite('panel-' + type + '.png', panel_types[type].vert ? PANEL_H : PANEL_W, panel_types[type].vert ? PANEL_W : PANEL_H, origin_0_0);
+      sprites.panel_help[type] = loadSprite('panel-' + type + '-help.png', panel_types[type].vert ? PANEL_H : PANEL_W, panel_types[type].vert ? PANEL_W : PANEL_H, origin_0_0);
     }
+    sprites.panel_bgs['cargo-empty'] = loadSprite('panel-cargo-empty.png', PANEL_W, PANEL_H, origin_0_0);
+    sprites.panel_bgs['cargo-vert'] = loadSprite('panel-cargo-vert.png', PANEL_H, PANEL_W, origin_0_0);
+    sprites.panel_help['cargo-vert'] = loadSprite('panel-cargo-vert-help.png', PANEL_H, PANEL_W, origin_0_0);
+
     sprites.panel_destroyed = loadSprite('panel-destroyed.png', PANEL_W, PANEL_H, origin_0_0);
     sprites.panel_destroyed_vert = loadSprite('panel-destroyed-vert.png', PANEL_H, PANEL_W, origin_0_0);
+
+    sprites.panel_load = loadSprite('panel-load.png', PANEL_W, PANEL_H, origin_0_0);
+    sprites.panel_load_vert = loadSprite('panel-load-vert.png', PANEL_H, PANEL_W, origin_0_0);
 
     // sprites.test_animated = loadSprite('test_sprite.png', [13, 13], [13, 13]);
     // sprites.animation = createAnimation({
@@ -393,15 +433,28 @@ export function main(canvas)
     return elem.type === 'cargo' ? elem.cargo > 0 : elem.hp > 0;
   }
 
+  function triggerWin() {
+    log('Encounter won!');
+    state.wave.won = true;
+    state.wave.win_countdown = WIN_COUNTDOWN;
+    for (let ii = 0; ii < state.slots.length; ++ii) {
+      let slot = state.slots[ii];
+      slot.fire_at = null;
+      slot.power = 0;
+    }
+  }
+
   function doTick() {
+    if (state.wave.won) {
+      --state.wave.win_countdown;
+      if (!state.wave.win_countdown) {
+        app.game_state = chapters[state.chapter].special ? specialInit : manageInit;
+      }
+      return;
+    }
     if (!state.wave.ships.filter(hasHP).length) {
       // we've won!
-      log('Encounter won!');
-      state.wave.won = true;
-      for (let ii = 0; ii < state.slots.length; ++ii) {
-        let slot = state.slots[ii];
-        slot.fire_at = null;
-      }
+      triggerWin();
       return;
     }
 
@@ -515,6 +568,7 @@ export function main(canvas)
       if (targets.length) {
         let slot = targets[Math.floor(Math.random() * targets.length)];
         if (slot.cargo) {
+          // TODO: log (and combine with previous log)
           --slot.cargo;
         }
       }
@@ -606,7 +660,7 @@ export function main(canvas)
     }
   }
 
-  function drawSlots(dt) {
+  function drawSlots(dt, is_manage) {
     let stats = calcShipStats();
     for (let ii = 0; ii < state.slots.length; ++ii) {
       let slot = state.slots[ii];
@@ -615,16 +669,34 @@ export function main(canvas)
       let x = SHIP_X + pos[0];
       let y = SHIP_Y + pos[1];
       let vert = slot_type_def.vert; // TODO : get right value for cargo replacing vertical slot
-      sprites.panel_bgs[slot.type].draw({
-        x, y, z: Z.SHIP + 1,
-        size: [vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H],
-        frame: 0,
-      });
+      let slot_type_img = slot.type;
+      if (slot.type === 'cargo' && panel_types[ship_slots[ii].start].vert) {
+        vert = true;
+        slot_type_img = 'cargo-vert';
+      }
+      if (slot.type === 'cargo' && state.chapter === 1) {
+        slot_type_img = 'cargo-empty';
+      }
+      if (slot.hp) {
+        sprites.panel_bgs[slot_type_img].draw({
+          x, y, z: Z.SHIP + 1,
+          size: [vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H],
+          frame: 0,
+        });
+      } else {
+        sprites['panel_destroyed' + (vert ? '_vert' : '')].draw({
+          x, y, z: Z.SHIP + 2,
+          size: [slot_type_def.vert ? PANEL_H : PANEL_W, slot_type_def.vert ? PANEL_W : PANEL_H],
+          frame: 0,
+        });
+      }
       if (slot.type === 'cargo') {
-        // TODO: draw people moving around
-        font.drawSizedAligned(style_value, x, y, Z.SHIP + 4, glov_ui.font_height,
-          glov_font.ALIGN.HVCENTER, vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H,
-          slot.cargo.toString());
+        if (state.chapter !== 1) {
+          // TODO: draw people moving around
+          font.drawSizedAligned(style_value, x, y, Z.SHIP + 4, glov_ui.font_height,
+            glov_font.ALIGN.HVCENTER, vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H,
+            slot.cargo.toString());
+        }
         continue;
       }
       if (slot.hp) {
@@ -636,44 +708,73 @@ export function main(canvas)
           button_rect.h = PANEL_W;
         }
         let over = 0;
-        let disabled = !slot.power && stats.power >= stats.gen && slot.type !== 'gen' && !slot.autooff;
-        if (slot.autocool) {
-          // not interactable
-        } else {
+        if (is_manage) {
           let clicked = false;
-          if (!disabled && glov_input.clickHit(button_rect)) {
-            if (slot.autooff) {
-              slot.autooff = false;
-              slot.power = 0;
-            } else {
-              slot.power = (slot.power + 1) % MAX_POWER;
-            }
-            over = 1;
-            clicked = true;
-          } else if (!disabled && glov_input.clickHit(lodash.merge({ button: 1 }, button_rect))) {
-            slot.power = (slot.power -1 + MAX_POWER) % MAX_POWER;
+          if (state.chapter !== 1 && glov_input.clickHit(button_rect)) {
             over = 1;
             clicked = true;
           } else if (glov_input.isMouseOver(button_rect)) {
             over = 1;
           }
           if (clicked) {
-            let idx = state.on_priority.indexOf(ii);
-            if (idx !== -1) {
-              state.on_priority.splice(idx, 1);
+            state.remove_slot = ii;
+          }
+          if (state.remove_slot === ii) {
+            sprites['panel_load' + (vert ? '_vert' : '')].draw({
+              x, y, z: Z.SHIP + 5,
+              size: [slot_type_def.vert ? PANEL_H : PANEL_W, slot_type_def.vert ? PANEL_W : PANEL_H],
+              frame: 0,
+            });
+          } else if (over) {
+            sprites.panel_help[slot_type_img].draw({
+              x, y, z: Z.SHIP + 5,
+              size: [slot_type_def.vert ? PANEL_H : PANEL_W, slot_type_def.vert ? PANEL_W : PANEL_H],
+              frame: 0,
+            });
+          }
+        } else if (state.wave.won) {
+          // draw nothing, not interactable
+        } else {
+          let disabled = !slot.power && stats.power >= stats.gen && slot.type !== 'gen' && !slot.autooff;
+          if (slot.autocool) {
+            // not interactable
+          } else {
+            let clicked = false;
+            if (!disabled && glov_input.clickHit(button_rect)) {
+              if (slot.autooff) {
+                slot.autooff = false;
+                slot.power = 0;
+              } else {
+                slot.power = (slot.power + 1) % MAX_POWER;
+              }
+              over = 1;
+              clicked = true;
+            } else if (!disabled && glov_input.clickHit(lodash.merge({ button: 1 }, button_rect))) {
+              slot.power = (slot.power -1 + MAX_POWER) % MAX_POWER;
+              over = 1;
+              clicked = true;
+            } else if (glov_input.isMouseOver(button_rect)) {
+              over = 1;
             }
-            if (slot.power) {
-              state.on_priority.push(ii);
+            if (clicked) {
+              let idx = state.on_priority.indexOf(ii);
+              if (idx !== -1) {
+                state.on_priority.splice(idx, 1);
+              }
+              if (slot.power) {
+                state.on_priority.push(ii);
+              }
             }
           }
+          sprites.toggles.draw({
+            x: x + (vert ? 2 : 0),
+            y: y + (vert ? 32 : 0),
+            z: Z.SHIP + 2,
+            size: [PANEL_H, PANEL_H],
+            frame: slot.autooff || disabled && over ? 7 : slot.autocool ? 6 : (slot.power * 2 + over),
+          });
         }
-        sprites.toggles.draw({
-          x: x + (vert ? 2 : 0),
-          y: y + (vert ? 32 : 0),
-          z: Z.SHIP + 2,
-          size: [PANEL_H, PANEL_H],
-          frame: slot.autooff || disabled && over ? 7 : slot.autocool ? 6 : (slot.power * 2 + over),
-        });
+        // Draw values
         for (let jj = 0; jj < slot_type_def.values.length; ++jj) {
           let value_type = slot_type_def.values[jj];
           if (value_type) {
@@ -706,13 +807,6 @@ export function main(canvas)
           // TODO: display guns
           drawFire(true, false, x + 40, y + PANEL_H / 2, slot.fire_at[0], slot.fire_at[1]);
         }
-      } else {
-        // no HP
-        sprites['panel_destroyed' + (vert ? '_vert' : '')].draw({
-          x, y, z: Z.SHIP + 2,
-          size: [slot_type_def.vert ? PANEL_H : PANEL_W, slot_type_def.vert ? PANEL_W : PANEL_H],
-          frame: 0,
-        });
       }
     }
   }
@@ -746,7 +840,7 @@ export function main(canvas)
     glov_ui.drawRect(x, y, x + w * value, y + h, Z.UI + 2, pico8_colors[bar_color]);
   }
 
-  function drawShipSummary(dt) {
+  function drawShipSummary(dt, is_manage) {
     let x0 = 6;
     let y0 = 2;
     let x = x0;
@@ -763,30 +857,34 @@ export function main(canvas)
     x += size;
     y += y_adv;
     let stats = calcShipStats();
-    font.drawSized(style_summary, x, y, z_text, size, `${stats.power} / ${stats.gen} PWR`);
-    drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, stats.power / stats.gen, 1, colorIndex(Math.max(0, 3 - (stats.gen - stats.power))));
-    y += y_adv;
-    font.drawSized(style_summary, x, y, z_text, size, `${state.o2.toFixed(0)}% O2 SUPPLY`);
-    drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, state.o2 / 100, (state.o2 >= 4 * 6) ? 1 : colorIndex(4 - Math.min(4, Math.floor(state.o2 / 6))), 11);
-    y += y_adv;
-    font.drawSized(style_summary, x, y, z_text, size, `${stats.shield || 0} Shield`);
-    drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, stats.shield / (state.wave.num_ships * state.wave.damage * 2),
-      stats.shield <= state.wave.damage ? 8 : 1, 12);
-    y += y_adv;
-    font.drawSized(style_summary, x, y, z_text, size, `${(stats.evade || 0).toFixed(0)}% Evade`);
-    drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, stats.evade / 100,
-      1, 11);
-    y += y_adv;
+    if (!is_manage) {
+      font.drawSized(style_summary, x, y, z_text, size, `${stats.power} / ${stats.gen} PWR`);
+      drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, stats.power / stats.gen, 1, colorIndex(Math.max(0, 3 - (stats.gen - stats.power))));
+      y += y_adv;
+      font.drawSized(style_summary, x, y, z_text, size, `${state.o2.toFixed(0)}% O2 SUPPLY`);
+      drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, state.o2 / 100, (state.o2 >= 4 * 6) ? 1 : colorIndex(4 - Math.min(4, Math.floor(state.o2 / 6))), 11);
+      y += y_adv;
+      font.drawSized(style_summary, x, y, z_text, size, `${stats.shield || 0} Shield`);
+      drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, stats.shield / (state.wave.num_ships * state.wave.damage * 2),
+        stats.shield <= state.wave.damage ? 8 : 1, 12);
+      y += y_adv;
+      font.drawSized(style_summary, x, y, z_text, size, `${(stats.evade || 0).toFixed(0)}% Evade`);
+      drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, stats.evade / 100,
+        1, 11);
+      y += y_adv;
+    }
     font.drawSized(style_summary, x, y, z_text, size, `${stats.cargo || 0} Refugees`);
     y += y_adv;
 
     y += 4;
-    if (state.messages.length > 2) {
-      state.messages = state.messages.slice(-2);
-    }
-    for (let ii = Math.max(0, state.messages.length - 2); ii < state.messages.length; ++ii) {
-      glov_ui.print(style_summary, x0, y, z_text, state.messages[ii]);
-      y += glov_ui.font_height;
+    if (!is_manage) {
+      if (state.messages.length > 2) {
+        state.messages = state.messages.slice(-2);
+      }
+      for (let ii = Math.max(0, state.messages.length - 2); ii < state.messages.length; ++ii) {
+        glov_ui.print(style_summary, x0, y, z_text, state.messages[ii]);
+        y += glov_ui.font_height;
+      }
     }
 
     glov_ui.panel({
@@ -799,7 +897,7 @@ export function main(canvas)
 
   function drawWaveSummary(dt) {
     let x0 = 6;
-    let y0 = game_height - 49;
+    let y0 = game_height - 38;
     let x = x0;
     let y = y0;
     let size = 16 * 0.75;
@@ -827,13 +925,28 @@ export function main(canvas)
     });
   }
 
-  function encounter(dt) {
-    if (glov_ui.modal_dialog) {
-      // Testing effects
-      glov_engine.queueFrameEffect(Z.MODAL - 2, doBlurEffect);
-      glov_engine.queueFrameEffect(Z.MODAL - 1, doDesaturateEffect);
+  function drawShipBG(dt) {
+    time_in_state += dt;
+    if (time_in_state >= SHIP_TRANSITION_TIME) {
+      SHIP_X = ship_x_desired;
+    } else {
+      SHIP_X = util.lerp(util.easeInOut(time_in_state / SHIP_TRANSITION_TIME, 2),
+        ship_x_prev, ship_x_desired);
     }
+    draw_list.queue(sprites.game_bg, 0, 0, Z.BACKGROUND, pico8_colors[2]);
+    sprites.ship.draw({
+      x: SHIP_X, y: SHIP_Y, z: Z.SHIP,
+      size: [SHIP_W, SHIP_H],
+      frame: 0,
+    });
+  }
 
+  function encounter(dt) {
+    if (DEBUG) {
+      if (glov_input.keyDownHit(key_codes.W) && !state.wave.won) {
+        triggerWin();
+      }
+    }
     if (dt >= state.tick_countdown) {
       doTick();
       state.tick_countdown = Math.max(TICK_EACH / 2, TICK_EACH - (dt - state.tick_countdown));
@@ -841,34 +954,221 @@ export function main(canvas)
       state.tick_countdown -= dt;
     }
 
-    draw_list.queue(sprites.game_bg, 0, 0, Z.BACKGROUND, pico8_colors[2]);
-    sprites.ship.draw({
-      x: SHIP_X, y: SHIP_Y, z: Z.SHIP,
-      size: [SHIP_W, SHIP_H],
-      frame: 0,
-    });
-
+    drawShipBG(dt);
     drawSlots(dt);
-
     drawWave(dt);
-
     drawShipSummary(dt);
-
     drawWaveSummary(dt);
+  }
 
+  function drawManageInstructions(dt) {
+    let x0 = 6;
+    let y0 = state.chapter === 1 ? 8 : 34;
+    let x = x0;
+    let y = y0;
+    let size = 8;
+    let y_adv = 7;
+    let z_text = Z.UI + 3;
 
-    // if (glov_ui.buttonText({ x: 100, y: 100, text: 'Button!'})) {
-    //   glov_ui.modalDialog({
-    //     title: 'Modal Dialog',
-    //     text: 'This is a modal dialog!',
-    //     buttons: {
-    //       'OK': function () {
-    //         console.log('OK pushed!');
-    //       },
-    //       'Cancel': null, // no callback
-    //     },
-    //   });
-    // }
+    y += 2;
+    font.drawSized(style_summary, x, y, z_text, size, 'DOCKED AT PORT');
+    x += size;
+    y += y_adv;
+    let text = 'Here there are many fleeing the oppression of the Alliance.\n\n';
+
+    if (state.chapter === 1) {
+      text += 'You hope they\'ll find a way off this rock, but for now you' +
+        ' review your equipment and head into battle to stop The Alliance.';
+    } else {
+      if (state.recent_pickup) {
+        text += `Seeing empty${state.chapter === 2 ? ' space in your cargo hold' : ', if slightly bunrt, seats'}, ${state.recent_pickup}` +
+          ` fearless refugee${state.recent_pickup === 1 ? '' : 's'} quickly scramble aboard filling your ${state.chapter === 2 ? 'empty cargo' : 'recently vacated'}` +
+          ' hold.\n\n';
+      } else {
+        text += 'Your passengers celebrate that every one of them survived the last leg of their harrowing journey.\n\n';
+      }
+      if (!chapters[state.chapter].no_passengers) {
+        text +=
+          'You feel you have more than enough equipment, so choose one' +
+          ' to jettison in order to fit some more refugees onto your ship.';
+        }
+    }
+    y += font.drawSizedWrapped(style_summary, x, y, z_text,
+      120, 0,
+      size, text);
+
+    glov_ui.panel({
+      x: 0,
+      y: y0,
+      w: 140,
+      h: y - y0 + 5,
+    });
+  }
+
+  function manage(dt) {
+    drawShipBG(dt);
+    if (state.chapter !== 1) {
+      drawShipSummary(dt, true);
+    }
+    drawSlots(dt, true);
+    drawManageInstructions(dt);
+
+    if (chapters[state.chapter].no_passengers) {
+      glov_ui.print(style_summary, 6, game_height - 50, Z.UI + 1,
+        'Tap or mouse over each kind of');
+      glov_ui.print(style_summary, 6, game_height - 50 + 8, Z.UI + 1,
+        'equipment to see what it does.');
+      if (glov_ui.buttonText({ x: 26, y: game_height - 18, text: 'To battle!'})) {
+        app.game_state = encounterInit;
+      }
+    } else {
+      if (state.remove_slot === -1) {
+        glov_ui.print(style_summary, 6, game_height - 50, Z.UI + 1,
+          'Click equipment to remove');
+      } else {
+        glov_ui.print(style_summary, 6, game_height - 50, Z.UI + 1,
+          `Remove a ${panel_types[state.slots[state.remove_slot].type].name} and`);
+        let saved = 20;
+        if (state.slots[state.remove_slot].type === 'shield' && chapters[state.chapter].replace_shield_40) {
+          saved = 40;
+        }
+        if (glov_ui.buttonText({ x: 8, y: game_height - 18 - 22,
+          w: 84,
+          text: `Save ${saved} refugees`}))
+        {
+          state.slots[state.remove_slot] = {
+            type: 'cargo',
+            power: 0,
+            heat_damage: 0,
+            hp: 100,
+            idx: state.remove_slot,
+            cargo: saved,
+          };
+          app.game_state = encounterInit;
+        }
+      }
+      glov_ui.print(style_summary, 6, game_height - 18 + 3, Z.UI + 1,
+        'or...');
+      if (glov_ui.buttonText({ x: 26, y: game_height - 18, text: 'Take no one'})) {
+        glov_ui.modalDialog({
+          title: 'Heartlessness!',
+          text: 'Their lives will surely be miserable under The Alliance. Are you sure you want to take on no additional passengers?',
+          buttons: {
+            'Yes': function () {
+              app.game_state = encounterInit;
+            },
+            'Back': null, // no callback
+          },
+        });
+      }
+    }
+
+    glov_ui.panel({
+      x: 0,
+      y: game_height - 54,
+      w: 160,
+      h: 54,
+    });
+  }
+
+  function intro(dt) {
+    drawShipBG(dt);
+
+    let x0 = game_width / 6;
+    let w = game_width / 1.5;
+    let y0 = game_height / 10;
+    let h = 100;
+    let x = x0;
+    let y = y0;
+    let size = glov_ui.font_height;
+
+    y += 8;
+    font.drawSizedAligned(style_summary, x, y, Z.UI + 1, size * 2,
+      glov_font.ALIGN.HCENTER, w, 0, 'Escape From The Alliance');
+    y += size * 2 + 4;
+    font.drawSizedAligned(style_summary, x, y, Z.UI + 1, size,
+      glov_font.ALIGN.HCENTER, w, 0, 'By Jimb Esser');
+    y += size;
+    font.drawSizedAligned(style_summary, x, y, Z.UI + 1, size,
+      glov_font.ALIGN.HCENTER, w, 0, 'Made in 48hrs for Ludum Dare 42');
+    y += size * 2;
+    y += font.drawSizedWrapped(style_summary, x + 8, y, Z.UI + 1,
+      w - 16, 0, size,
+      'You are Captain Ben of the starship Lighting Bug.  The evil Alliance is' +
+      ' cramping the style of independents like yourself so you finish gearing' +
+      ' up your ship before heading into battle...');
+    y += 8;
+
+    let button_w = 160;
+    if (glov_ui.buttonText({ x: game_width / 2 - button_w/2, y,
+      w: button_w,
+      text: 'Dock at port one last time...'}))
+    {
+      app.game_state = manageInit;
+    }
+
+    glov_ui.panel({
+      x: x0,
+      y: y0,
+      w: w,
+      h: h,
+    });
+  }
+
+  function special(dt) {
+    drawShipBG(dt);
+
+    let x0 = game_width / 6;
+    let w = game_width / 1.5;
+    let y0 = game_height / 10;
+    let x = x0;
+    let y = y0;
+    let size = glov_ui.font_height;
+
+    y += 8;
+    font.drawSizedAligned(style_summary, x, y, Z.UI + 1, size * 2,
+      glov_font.ALIGN.HCENTER, w, 0, 'Escape From The Alliance');
+    y += size * 2 + 4;
+    font.drawSizedAligned(style_summary, x, y, Z.UI + 1, size,
+      glov_font.ALIGN.HCENTER, w, 0, `Chapter ${state.chapter + 1}`);
+    y += size * 2;
+    let text = 'MISSING_TEXT';
+    if (state.chapter === 1) {
+      text = 'Okay, well, that fight was not so bad.  However, ' +
+        ' your sensors show The Alliance armada is way bigger than' +
+        ' you thought.\n\n' +
+        'New plan: get out of Dodge, and take as many refugees with' +
+        ' you as you can.  Your ship is just about out of space though...';
+    } else if (state.chapter === 2) {
+      text = 'That last bunch of passengers was an odd group, like an old joke,' +
+        ' "A rabbi, a cop, and a doctor walk into a bar...", but at least the' +
+        ' skilled doctor can fix up your crew.  Her younger brother is weird though,' +
+        ' just stares at you and says things like "Ben, good... in the Latin".';
+    } else if (state.chapter === 3) {
+      text = 'In port you are approached by a group of 40 Etherians, a rare race of energy beings.' +
+        '\n\nThey can all crowd into a single cargo hold, but require energy hook-ups that can' +
+        ' only be found if you remove one of your shields.';
+      text += '\n\n(If you choose to jettison a shield on the next screen, you will gain 40 more passengers)';
+    }
+    y += font.drawSizedWrapped(style_summary, x + 8, y, Z.UI + 1,
+      w - 16, 0, size,
+      text);
+    y += 8;
+
+    let button_w = 160;
+    if (glov_ui.buttonText({ x: game_width / 2 - button_w/2, y,
+      w: button_w,
+      text: 'Back to port...'}))
+    {
+      app.game_state = manageInit;
+    }
+
+    glov_ui.panel({
+      x: x0,
+      y: y0,
+      w: w,
+      h: y - y0 + 8,
+    });
 
   }
 
@@ -882,9 +1182,10 @@ export function main(canvas)
       damage,
       ships: [],
     };
+    state.messages = [];
     for (let ii = 0; ii < num_ships; ++ii) {
       let ship = {
-        x: ENEMY_SHIP_X0 - Math.random() * 10,
+        x: ENEMY_SHIP_X0 + Math.random() * 10,
         y: ENEMY_SHIP_H + Math.random() * (game_height - ENEMY_SHIP_H * 2),
         hp: max_hp,
         fire_countdown: ENEMY_INITIAL_COUNTDOWN + Math.floor(Math.random() * 3), // in ticks
@@ -898,8 +1199,8 @@ export function main(canvas)
       tick_countdown: TICK_FIRST,
       slots: [],
       messages: [],
-      o2: 80,
       on_priority: [],
+      chapter: 0,
     };
     for (let ii = 0; ii < ship_slots.length; ++ii) {
       let slot = {
@@ -917,22 +1218,70 @@ export function main(canvas)
       }
       state.slots.push(slot);
     }
-    nextWave();
   }
 
   function encounterInit(dt) {
-    initState();
-    $('.screen').hide();
-    $('#title').show();
+    nextWave();
     app.game_state = encounter;
+    time_in_state = 0;
+    state.o2 = 80;
+    ship_x_prev = SHIP_X;
+    ship_x_desired = SHIP_X_ENCOUNTER;
     encounter(dt);
+  }
+
+  function manageInit(dt) {
+    app.game_state = manage;
+    state.chapter++;
+    time_in_state = 0;
+    ship_x_prev = SHIP_X;
+    ship_x_desired = SHIP_X_MANAGE;
+    state.recent_pickup = 0;
+    state.remove_slot = -1;
+    for (let ii = 0; ii < state.slots.length; ++ii) {
+      let slot = state.slots[ii];
+      if (slot.type === 'cargo' && slot.cargo < value_defs.cargo.max && !chapters[state.chapter].no_passengers) {
+        state.recent_pickup += value_defs.cargo.max - slot.cargo;
+        slot.cargo = value_defs.cargo.max;
+      }
+      let slot_type_def = panel_types[slot.type];
+      for (let jj = 0; jj < slot_type_def.values.length; ++jj) {
+        if (slot_type_def.values[jj] && value_defs[slot_type_def.values[jj]].port !== undefined) {
+          slot[slot_type_def.values[jj]] = value_defs[slot_type_def.values[jj]].port;
+        }
+      }
+      slot.autooff = false;
+      slot.autocool = false;
+      slot.power = 0;
+      slot.fire_at = null;
+    }
+    state.on_priority = [];
+    manage(dt);
+  }
+
+  function specialInit(dt) {
+    app.game_state = special;
+    ship_x_prev = SHIP_X;
+    ship_x_desired = SHIP_X_INTRO;
+    special(dt);
+  }
+
+  function introInit(dt) {
+    ship_x_prev = game_width;
+    ship_x_desired = SHIP_X_INTRO;
+    intro(dt);
   }
 
   function loading() {
     let load_count = glov_sprite.loading() + sound_manager.loading();
     $('#loading').text(`Loading (${load_count})...`);
     if (!load_count) {
-      app.game_state = encounterInit;
+      $('.screen').hide();
+      initState();
+      if (DEBUG) {
+        state.chapter = 1;
+      }
+      app.game_state = DEBUG ? specialInit : introInit;
     }
   }
 
@@ -947,6 +1296,11 @@ export function main(canvas)
   app.game_state = loadingInit;
 
   function tick(dt) {
+    if (glov_ui.modal_dialog) {
+      // Testing effects
+      glov_engine.queueFrameEffect(Z.MODAL - 2, doBlurEffect);
+      glov_engine.queueFrameEffect(Z.MODAL - 1, doDesaturateEffect);
+    }
     app.game_state(dt);
   }
 
