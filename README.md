@@ -1,26 +1,27 @@
-Javascript libGlov/GLOV.js framework
+Ludum Dare 42 - Running Out of Space
 ============================
 
-* Files can be ES6 (through Babel)
-* Server automatically restarts on any relevant file change
-* Client automatically reloads on javascript or html change
-* Client automatically dynamically reloads CSS file changes
+* Intro
+* Encounter Phase
+* Special Event Phase
+* Manage Phase
+* Repeat
 
-Useful SublimeText 3 packages
-* SublimeLinter
-* SublimeLinter-jshint (requires `npm i -g jshint`)
 
-Start with: `npm start` (after running `npm i` once)
+* Encounter Phase
+  * Each non-cargo node can be toggled between 2-3 states
+    * If power capacity is exceeded, reset the *last toggled* nodes to OFF until OK
+  * Waves of enemies attack the ship and are resolved
+  * If die, restart from beginning, or allow retrying the wave a couple times?
+* Manage Phase
+  * See data on next wave
+  * See state of current planet / score if we settle here
+  * Choose:
+    * Settle here, or
+    * Remove equipment + take cargo, or
+    * Take no cargo, just continue
 
-Notes:
-* The engine API (glov/*) is subject to change significantly, often changes with each Ludum Dare in which I use this engine ^_^
 
-TODO:
-* input
-  * dragging?
-  * onMouseDown not firing, because isHovering is not set because of my handler changes?
-* use spine for sequencing, or leave this until later?
-* cleaner window resize handling (have to be checking this each frame anyway?)
-
-* minify, bundle CSS
-* bundle vendor .js files?
+Encounter mechanic possibilities:
+  Maybe just have On/Off state, and it switches from On to Off if overheating,
+    and *then* if it's turned back on, it'll go into "over" mode, and stay on, taking damage
