@@ -56,7 +56,7 @@ let SHIP_X = SHIP_X_ENCOUNTER;
 let time_in_state = 0;
 const SHIP_Y = 0;
 const TICK_FIRST = DEBUG ? 1000 : 1000;
-const TICK_EACH = DEBUG ? 200 : 1000;
+const TICK_EACH = DEBUG ? 1000 : 1000;
 const MAX_POWER = 2;
 
 const ENEMY_SHIP_X0 = game_width + 64;
@@ -775,8 +775,13 @@ export function main(canvas)
             state.deaths += deaths;
             slot.cargo = Math.max(0, slot.cargo - deaths);
             if (slot.cargo === 0) {
-              log(slot.type.toUpperCase() + ' destroyed by ENEMY');
-              slot.hp = 0;
+              // if no people left, then damage to HP
+              if (damage >= slot.hp) {
+                log(slot.type.toUpperCase() + ' destroyed by ENEMY');
+                slot.hp = 0;
+              } else {
+                slot.hp -= damage;
+              }
             }
           } else if (damage >= slot.hp) {
             log(slot.type.toUpperCase() + ' destroyed by ENEMY');
@@ -1832,7 +1837,7 @@ export function main(canvas)
         tutorial = {};
         state.chapter = 3;
       }
-      app.game_state = DEBUG ? manageInit : introInit;
+      app.game_state = DEBUG ? encounterInit : introInit;
     }
   }
 
