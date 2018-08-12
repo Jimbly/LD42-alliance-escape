@@ -307,6 +307,7 @@ export function main(canvas)
     sound_manager.loadSound('overheat');
     sound_manager.loadSound('win');
     sound_manager.loadSound('shields_down');
+    sound_manager.loadSound('explosion');
 
     const origin_0_0 = { origin: math_device.v2Build(0, 0) };
 
@@ -1710,6 +1711,39 @@ export function main(canvas)
     let text = 'MISSING_TEXT';
     let button = 'Dock at another port...';
     if (state.chapter === 1) {
+      if (!state.tutorial_eval_done) {
+        state.tutorial_eval_done = true;
+        let bad = false;
+        if (state.slots.filter(hasHP).length !== state.slots.length) {
+          bad = true;
+          console.log('Bad: lost a slot');
+        } else if ((state.slots.length - 1) * 100 - calcShipStats().hp > 75) {
+          bad = true;
+          console.log('Bad: lost hp: ' + (state.slots.length * 100 - calcShipStats().hp));
+        }
+        if (bad) {
+          let width_save = glov_ui.button_width;
+          glov_ui.button_width = 100;
+          glov_ui.modalDialog({
+            title: 'TUTORIAL PERFORMANCE',
+            text: 'I\'m sorry to say it, but your performance in the tutorial was... not great.\n\n' +
+              'I know, it\'s my fault, I made this game start rather complicated (it gets simpler, yet harder).\n\n' +
+              'I\'d recommend doing the tutorial battle again, getting more familiar wit the mechanics, and taking little or no damage.\n\n' +
+              'Remember: Keep your shields up, don\'t let things overheat, and fire weapons when you get a chance.' +
+              ' Ignore Life Support/Engines/Power for now.\n\n' +
+              'You may choose to continue, but you\'re already injured enough you may not make it to the end.',
+            buttons: {
+              'Retry': function () {
+                window.location.reload();
+              },
+              'Continue': function () {
+                glov_ui.button_width = width_save;
+              },
+            }
+          });
+        }
+      }
+
       text = 'Okay, well, that fight was not so bad. However,' +
         ' your sensors show The Alliance armada is way bigger than' +
         ' you thought.\n\n' +
@@ -1820,6 +1854,7 @@ export function main(canvas)
         w: button_w,
         text: 'Charge the armada, go out in glory!'}))
       {
+        sound_manager.play('explosion');
         glov_ui.modalDialog({
           title: 'You can\'t take the sky from me!',
           text: 'You fly straight towards the oncoming armada, your guns gloriously, if foolishly,' +
@@ -2020,10 +2055,10 @@ export function main(canvas)
       initState();
       if (DEBUG) {
         tutorial = {};
-        state.chapter = 3;
+        //state.chapter = 3;
         //planet_index = 1;
       }
-      app.game_state = DEBUG ? manageInit : introInit;
+      app.game_state = DEBUG ? introInit : introInit;
     }
   }
 
