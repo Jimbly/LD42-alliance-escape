@@ -15,6 +15,7 @@ Z.BACKGROUND = 0;
 Z.SHIP = 5;
 Z.ENEMY = 10;
 Z.PARTICLES = 20;
+Z.BORDERS = 1000;
 
 const DEBUG = window.location.toString().indexOf('localhost') !== -1;
 
@@ -96,7 +97,7 @@ export function main(canvas)
   });
 
   const sound_manager = glov_engine.sound_manager;
-  // const glov_camera = glov_engine.glov_camera;
+  const glov_camera = glov_engine.glov_camera;
   const glov_input = glov_engine.glov_input;
   const glov_sprite = glov_engine.glov_sprite;
   const glov_ui = glov_engine.glov_ui;
@@ -1908,6 +1909,12 @@ export function main(canvas)
       glov_engine.queueFrameEffect(Z.MODAL - 2, doBlurEffect);
       glov_engine.queueFrameEffect(Z.MODAL - 1, doDesaturateEffect);
     }
+    // Borders
+    glov_ui.drawRect(glov_camera.x0(), glov_camera.y0(), glov_camera.x1(), 0, Z.BORDERS, pico8_colors[1]);
+    glov_ui.drawRect(glov_camera.x0(), game_height, glov_camera.x1(), glov_camera.y1(), Z.BORDERS, pico8_colors[1]);
+    glov_ui.drawRect(glov_camera.x0(), 0, 0, game_height, Z.BORDERS, pico8_colors[1]);
+    glov_ui.drawRect(game_width, 0, glov_camera.x1(), game_height, Z.BORDERS, pico8_colors[1]);
+
     app.game_state(dt);
   }
 
