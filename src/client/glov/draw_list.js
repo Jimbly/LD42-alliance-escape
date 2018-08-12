@@ -81,7 +81,7 @@ class GlovDrawList {
       x: (x - this.camera.data[0]) * this.camera.data[4] | 0,
       y: (y - this.camera.data[1]) * this.camera.data[5] | 0,
       z,
-      color,
+      color: color || this.color_white,
       scale: math_device.v4Build(scale[0] * this.camera.data[4], scale[1]*this.camera.data[5], 1,1),
       tex_rect,
       bucket: bucket || this.default_bucket,

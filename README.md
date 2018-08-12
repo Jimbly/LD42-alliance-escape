@@ -8,7 +8,6 @@ TODO:
     Repair event?
   Visuals
     Final planet w/ sunrise
-    Draw passengers moving / dying
     Better destroyed panels
     Different light and heavy fighters
     Debris from exploding enemy

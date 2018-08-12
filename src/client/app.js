@@ -339,6 +339,7 @@ export function main(canvas)
 
     sprites.toggles = loadSprite('toggles.png', [32, 32], [32, 32, 32, 32], origin_0_0);
     sprites.space = loadSprite('space.png', [13, 13, 13], [13, 13, 13, 13]);
+    sprites.cargo = loadSprite('cargo.png', [5, 5, 5], [5, 5, 5]);
 
     sprites.panel_bgs = {};
     sprites.panel_help = {};
@@ -363,7 +364,7 @@ export function main(canvas)
     sprites.bg = loadSprite('bg.png', 128, 256, origin_0_0);
 
     sprites.planets = [];
-    for (let ii = 1; ii <= 4; ++ii) {
+    for (let ii = 1; ii <= 5; ++ii) {
       sprites.planets[ii] = loadSprite(`planet-${ii}.png`, 128, 64, origin_0_0);
     }
 
@@ -922,10 +923,12 @@ export function main(canvas)
       if (slot.type === 'cargo' && state.chapter === 1) {
         slot_type_img = 'cargo-empty';
       }
+      let panel_w = vert ? PANEL_H : PANEL_W;
+      let panel_h = vert ? PANEL_W : PANEL_H;
       if (slot.hp) {
         sprites.panel_bgs[slot_type_img].draw({
           x, y, z: Z.SHIP + 1,
-          size: [vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H],
+          size: [panel_w, panel_h],
           frame: 0,
         });
         if (slot.type === 'weapon') {
@@ -944,16 +947,50 @@ export function main(canvas)
       } else {
         sprites['panel_destroyed' + (vert ? '_vert' : '')].draw({
           x, y, z: Z.SHIP + 2,
-          size: [vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H],
+          size: [panel_w, panel_h],
           frame: 0,
         });
       }
       if (slot.type === 'cargo') {
         if (state.chapter !== 1 && slot.hp) {
-          // TODO: draw people moving around
-          font.drawSizedAligned(style_value, x, y, Z.SHIP + 4, glov_ui.font_height,
-            glov_font.ALIGN.HVCENTER, vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H,
-            slot.cargo.toString());
+          // font.drawSizedAligned(style_value, x, y, Z.SHIP + 4, glov_ui.font_height,
+          //   glov_font.ALIGN.HVCENTER, panel_w, panel_h,
+          //   slot.cargo.toString());
+          const dirsx = [-1, 1, 0, 0, 1, 1, -1, -1, 0.1, 0, 0.1, 0];
+          const dirsy = [0, 0, -1, 1, -1, 1, -1, 1, 0, 0.1, 0, 0.1];
+          while (slot.alive.length < slot.cargo) {
+            slot.alive.push([Math.random(), Math.random(), Math.floor(Math.random() * 4),
+              Math.floor(Math.random() * dirsx.length)]);
+          }
+          while (slot.alive.length > slot.cargo) {
+            slot.dead.push(slot.alive.pop());
+          }
+          for (let jj = 0; jj < slot.alive.length; ++jj) {
+            let cc = slot.alive[jj];
+            cc[0] += dt * dirsx[cc[3]] * 0.00005;
+            cc[1] += dt * dirsy[cc[3]] * 0.00005;
+            if (cc[0] <= 0 || cc[0] >= 1 || cc[1] <= 0 || cc[1] >= 1) {
+              cc[0] = util.clamp(cc[0], 0, 1);
+              cc[1] = util.clamp(cc[1], 0, 1);
+              cc[3] = Math.floor(Math.random() * dirsx.length);
+            }
+            sprites.cargo.draw({
+              x: x + 6 + cc[0] * (panel_w - 12),
+              y: y + 6 + cc[1] * (panel_h - 12),
+              z: Z.SHIP + 5,
+              size: [5,5],
+              frame: cc[2],
+            });
+          }
+          for (let jj = 0; jj < slot.dead.length; ++jj) {
+            sprites.cargo.draw({
+              x: x + 6 + slot.dead[jj][0] * (panel_w - 12),
+              y: y + 6 + slot.dead[jj][1] * (panel_h - 12),
+              z: Z.SHIP + 4.5,
+              size: [5,5],
+              frame: slot.dead[jj][2] + 4,
+            });
+          }
         }
         continue;
       }
@@ -981,7 +1018,7 @@ export function main(canvas)
           if (state.remove_slot === ii) {
             sprites['panel_load' + (vert ? '_vert' : '')].draw({
               x, y, z: Z.SHIP + 5,
-              size: [vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H],
+              size: [panel_w, panel_h],
               frame: 0,
             });
           } else if (over) {
@@ -991,7 +1028,7 @@ export function main(canvas)
             }
             sprites.panel_help[img].draw({
               x, y, z: Z.SHIP + 5,
-              size: [vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H],
+              size: [panel_w, panel_h],
               frame: 0,
             });
           }
@@ -1387,13 +1424,15 @@ export function main(canvas)
           w: 84,
           text: chapters[state.chapter].no_passengers ? 'Save 0 refugees?' : `Save ${saved} refugees`}))
         {
-          state.slots[state.remove_slot] = {
+          let slot = state.slots[state.remove_slot] = {
             type: 'cargo',
             power: 0,
             heat_damage: 0,
             hp: 100,
             idx: state.remove_slot,
             cargo: saved,
+            alive: [],
+            dead: [],
           };
           state.picked_up[state.chapter] = true;
           app.game_state = encounterInit;
@@ -1839,7 +1878,7 @@ export function main(canvas)
         '\n\nThere\'s no sign of The Alliance anywhere.'+
         '\n\nYou think it\'s time to find a new home.';
       button = 'FTW';
-      planet_index = 2;
+      planet_index = 5;
     }
     y += font.drawSizedWrapped(style_summary, x + 8, y, Z.UI + 1,
       w - 16, 0, size,
@@ -1953,6 +1992,8 @@ export function main(canvas)
         heat_damage: 0,
         hp: 100,
         idx: ii,
+        alive: [],
+        dead: [],
       };
       let slot_type_def = panel_types[slot.type];
       for (let jj = 0; jj < slot_type_def.values.length; ++jj) {
@@ -1988,9 +2029,11 @@ export function main(canvas)
     for (let ii = 0; ii < state.slots.length; ++ii) {
       let slot = state.slots[ii];
       if (slot.type === 'cargo' && slot.cargo < value_defs.cargo.max && !chapters[state.chapter].no_passengers) {
-        state.recent_pickup += value_defs.cargo.max - slot.cargo;
+        let pickup = value_defs.cargo.max - slot.cargo;
+        state.recent_pickup += pickup;
         slot.cargo = value_defs.cargo.max;
       }
+      slot.dead = [];
       let slot_type_def = panel_types[slot.type];
       for (let jj = 0; jj < slot_type_def.values.length; ++jj) {
         if (slot_type_def.values[jj] && value_defs[slot_type_def.values[jj]].port !== undefined) {
@@ -2069,9 +2112,9 @@ export function main(canvas)
       if (DEBUG) {
         tutorial = {};
         state.chapter = 10;
-        //planet_index = 1;
+        planet_index = 1;
       }
-      app.game_state = DEBUG ? introInit : introInit;
+      app.game_state = DEBUG ? manageInit : introInit;
     }
   }
 
