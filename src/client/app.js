@@ -26,11 +26,17 @@ export const game_height = 288;
 var tutorial = { shield: 1, overheat: true, o2: true };
 const chapters = [
   null,
-  { no_passengers : true, special: true },
-  { special: true },
-  { special: true },
-  { special: true, replace_shield_40: true },
-  { special: true },
+  { no_passengers : true},
+  {},
+  {},
+  {replace_shield_40: true },
+  {no_passengers: true },
+  {},
+  {},
+  {},
+  {},
+  {},
+  { win : true },
 ];
 
 const SHIP_W = 288;
@@ -41,6 +47,8 @@ const SHIP_TRANSITION_TIME = 1000;
 const SHIP_X_ENCOUNTER = 18;
 const SHIP_X_MANAGE = (game_width - SHIP_W) + 18;
 const SHIP_X_INTRO = (game_width - SHIP_W) / 3;
+const SHIP_X_WIN = game_width - 18;
+const SHIP_X_SPECIAL = 0;
 let ship_x_prev = SHIP_X_ENCOUNTER;
 let ship_x_desired = SHIP_X_ENCOUNTER;
 let SHIP_X = SHIP_X_ENCOUNTER;
@@ -212,15 +220,15 @@ export function main(canvas)
 
   let ship_slots = [
     { pos: [162 - 4, 32 - 8], start: 'weapon' },
-    { pos: [162, 64 - 8], start: 'weapon' },
+    { pos: [162, 64 - 8], start: 'cargo' }, //'weapon' },
     { pos: [162, 192 + 8], start: 'weapon' },
-    { pos: [162 - 4, 224 + 8], start: 'weapon' },
+    { pos: [162 - 4, 224 + 8], start: 'cargo' }, //'weapon' },
     { pos: [194, 96], start: 'engine' },
-    { pos: [194, 128], start: 'engine' },
+    { pos: [194, 128], start: 'cargo' }, // 'engine' },
     { pos: [194, 160], start: 'engine' },
     { pos: [66, 96], start: 'shield' },
     { pos: [66, 128], start: 'cargo' },
-    { pos: [66, 160], start: 'shield' },
+    { pos: [66, 160], start: 'cargo' }, // 'shield' },
     { pos: [162, 96], start: 'gen' },
     { pos: [130, 96], start: 'repair' },
     { pos: [34, 112], start: 'gen' },
@@ -278,6 +286,7 @@ export function main(canvas)
     sprites.panel_bgs['cargo-empty'] = loadSprite('panel-cargo-empty.png', PANEL_W, PANEL_H, origin_0_0);
     sprites.panel_bgs['cargo-vert'] = loadSprite('panel-cargo-vert.png', PANEL_H, PANEL_W, origin_0_0);
     sprites.panel_help['cargo-vert'] = loadSprite('panel-cargo-vert-help.png', PANEL_H, PANEL_W, origin_0_0);
+    sprites.panel_help.engine2 = loadSprite('panel-engine-help2.png', PANEL_W, PANEL_H, origin_0_0);
 
     sprites.panel_destroyed = loadSprite('panel-destroyed.png', PANEL_W, PANEL_H, origin_0_0);
     sprites.panel_destroyed_vert = loadSprite('panel-destroyed-vert.png', PANEL_H, PANEL_W, origin_0_0);
@@ -455,7 +464,7 @@ export function main(canvas)
     if (state.wave.won) {
       --state.wave.win_countdown;
       if (!state.wave.win_countdown) {
-        app.game_state = chapters[state.chapter].special ? specialInit : manageInit;
+        app.game_state = specialInit;
       }
       return;
     }
@@ -471,7 +480,7 @@ export function main(canvas)
         continue;
       }
       if (slot.heat !== undefined) {
-        slot.heat += HEAT_DELTA[slot.power];
+        slot.heat += HEAT_DELTA[slot.power] * (slot.heat_scale || 1);
         slot.heat = Math.max(slot.heat, 0);
         if (tutorial.overheat && slot.heat >= value_defs.heat.max * 0.9) {
           tutorial.overheat = false;
@@ -514,7 +523,7 @@ export function main(canvas)
           slot.shield = Math.min(Math.max(slot.shield + SHIELD_DELTA[slot.power], 0), value_defs.shield.max);
           break;
         case 'engine':
-          slot.evade = Math.min(Math.max(slot.evade + EVADE_DELTA[slot.power], 0), value_defs.evade.max);
+          slot.evade = Math.min(Math.max(slot.evade + EVADE_DELTA[slot.power] * (state.engine_factor || 1), 0), value_defs.evade.max);
           break;
         case 'life':
           slot.o2 = Math.min(Math.max(slot.o2 + O2PROD_DELTA[slot.power], 0), value_defs.o2.max);
@@ -617,6 +626,7 @@ export function main(canvas)
         if (slot.cargo) {
           // TODO: log (and combine with previous log)
           --slot.cargo;
+          state.deaths++;
         }
       }
     }
@@ -714,7 +724,9 @@ export function main(canvas)
           ship.fire_at_vert = panel_types[slot.type].vert;
           assert(slot.hp);
           if (slot.type === 'cargo') {
-            slot.cargo = Math.max(0, slot.cargo - Math.ceil(damage / 5));
+            let deaths = Math.min(slot.cargo, Math.ceil(damage / 5));
+            state.deaths += deaths;
+            slot.cargo = Math.max(0, slot.cargo - deaths);
           } else if (damage >= slot.hp) {
             log(slot.type.toUpperCase() + ' destroyed by ENEMY');
             slot.hp = 0;
@@ -728,14 +740,14 @@ export function main(canvas)
     }
   }
 
-  function drawFire(is_player, is_vert, x0, y0, x1, y1) {
+  function drawFire(is_player, is_vert, x0, y0, x1, y1, scale) {
     for (let ii = 0; ii < 4; ++ii) {
       glov_ui.drawLine(
         x0,
-        y0 + Math.random() * 4 - 2,
-        x1 + Math.random() * (is_vert ? 8 : 16) - 4,
-        y1 + Math.random() * (is_vert ? 16 : 8) - 4,
-        Z.ENEMY + 1, 2, 0.95, pico8_colors[8 + Math.floor(Math.random() * 2) + (is_player ? 3 : 0)]
+        y0 + (Math.random() * 4 - 2) * scale,
+        x1 + (Math.random() * (is_vert ? 8 : 16) * scale - 4) * scale,
+        y1 + (Math.random() * (is_vert ? 16 : 8) * scale - 4) * scale,
+        Z.ENEMY + 1, 2 * scale, 0.95, pico8_colors[8 + Math.floor(Math.random() * 2) + (is_player ? 3 : 0)]
       );
     }
   }
@@ -806,7 +818,11 @@ export function main(canvas)
               frame: 0,
             });
           } else if (over) {
-            sprites.panel_help[slot_type_img].draw({
+            let img = slot_type_img;
+            if (img === 'engine' && state.engine_factor > 1) {
+              img = 'engine2';
+            }
+            sprites.panel_help[img].draw({
               x, y, z: Z.SHIP + 5,
               size: [slot_type_def.vert ? PANEL_H : PANEL_W, slot_type_def.vert ? PANEL_W : PANEL_H],
               frame: 0,
@@ -885,7 +901,7 @@ export function main(canvas)
         }
         if (slot.fire_at) {
           // TODO: display guns
-          drawFire(true, false, x + 40, y + PANEL_H / 2, slot.fire_at[0], slot.fire_at[1]);
+          drawFire(true, false, x + 40, y + PANEL_H / 2, slot.fire_at[0], slot.fire_at[1], 1);
         }
       }
     }
@@ -903,13 +919,13 @@ export function main(canvas)
       }
       sprites.enemy_fighter.draw({
         x: ship.x, y: ship.y, z: Z.ENEMY,
-        size: [-ENEMY_SHIP_H, ENEMY_SHIP_H],
+        size: [-ENEMY_SHIP_H * state.wave.scale, ENEMY_SHIP_H * state.wave.scale],
         frame: 0,
       });
 
       if (ship.fire_at) {
-        drawFire(false, ship.fire_at_vert, ship.x - ENEMY_SHIP_H / 2 + 2, ship.y,
-          SHIP_X + ship.fire_at[0], SHIP_Y + ship.fire_at[1]);
+        drawFire(false, ship.fire_at_vert, ship.x - ENEMY_SHIP_H * state.wave.scale / 2 + 2, ship.y,
+          SHIP_X + ship.fire_at[0], SHIP_Y + ship.fire_at[1], state.wave.scale);
       }
     }
   }
@@ -1054,13 +1070,15 @@ export function main(canvas)
     font.drawSized(style_summary, x, y, z_text, size, 'DOCKED AT PORT');
     x += size;
     y += y_adv;
-    let text = 'Here there are many fleeing the oppression of the Alliance.\n\n';
+    let text = (chapters[state.chapter].no_passengers && state.chapter !== 1) ? '' : 'Here there are many fleeing the oppression of the Alliance.\n\n';
 
     if (state.chapter === 1) {
       text += 'You hope they\'ll find a way off this rock, but for now you' +
         ' review your equipment and head into battle to stop The Alliance.';
     } else {
-      if (state.recent_pickup) {
+      if (chapters[state.chapter].no_passengers) {
+        text += 'You see no one around who wants to board.';
+      } else if (state.recent_pickup) {
         text += `Seeing empty${state.chapter === 2 ? ' space in your cargo hold' : ', if slightly bunrt, seats'}, ${state.recent_pickup}` +
           ` fearless refugee${state.recent_pickup === 1 ? '' : 's'} quickly scramble aboard filling your ${state.chapter === 2 ? 'empty' : 'recently vacated'}` +
           ' hold.\n\n';
@@ -1071,11 +1089,24 @@ export function main(canvas)
         text +=
           'You feel you have more than enough equipment, so choose one' +
           ' to jettison in order to fit some more refugees onto your ship.';
-        }
+      }
     }
     y += font.drawSizedWrapped(style_summary, x, y, z_text,
       120, 0,
       size, text);
+
+    if (state.chapter !== 1) {
+      x -= size;
+      y += 8;
+      font.drawSized(style_summary, x, y, z_text, size, 'SENSORS REPORT');
+      x += size;
+      y += y_adv + 2;
+      y += font.drawSizedWrapped(style_summary, x, y, z_text,
+        120, 0, size,
+        `${waves[state.chapter][0]} ${waves[state.chapter][1] < 5 ? 'Light ' : waves[state.chapter][1] > 5 ? 'Heavy ' : ''}Fighters\n` +
+        `(${waves[state.chapter][1]} Damage Each)\n`
+      );
+    }
 
     glov_ui.panel({
       x: 0,
@@ -1093,7 +1124,7 @@ export function main(canvas)
     drawSlots(dt, true);
     drawManageInstructions(dt);
 
-    if (chapters[state.chapter].no_passengers) {
+    if (state.chapter === 1) {
       glov_ui.print(style_summary, 6, game_height - 50, Z.UI + 1,
         'Tap or mouse over each kind of');
       glov_ui.print(style_summary, 6, game_height - 50 + 8, Z.UI + 1,
@@ -1109,12 +1140,13 @@ export function main(canvas)
         glov_ui.print(style_summary, 6, game_height - 50, Z.UI + 1,
           `Remove ${panel_types[state.slots[state.remove_slot].type].name} and`);
         let saved = 20;
+
         if (state.slots[state.remove_slot].type === 'shield' && chapters[state.chapter].replace_shield_40) {
           saved = 40;
         }
         if (glov_ui.buttonText({ x: 8, y: game_height - 18 - 22,
           w: 84,
-          text: `Save ${saved} refugees`}))
+          text: chapters[state.chapter].no_passengers ? 'Save 0 refugees?' : `Save ${saved} refugees`}))
         {
           state.slots[state.remove_slot] = {
             type: 'cargo',
@@ -1124,22 +1156,37 @@ export function main(canvas)
             idx: state.remove_slot,
             cargo: saved,
           };
+          state.picked_up[state.chapter] = true;
           app.game_state = encounterInit;
+          if (chapters[state.chapter].no_passengers) {
+            glov_ui.modalDialog({
+              title: 'THE INVISIBLE MAN',
+              text: 'As you rise through the stratosphere, you hear a voice from thin air say "Thank you."' +
+                '\n\nYour Comms Officer helps the man and his family of 19 get settled in to the empty cargo hold.',
+              buttons: {
+                'Odd...': null
+              },
+            });
+          }
         }
       }
       glov_ui.print(style_summary, 6, game_height - 18 + 3, Z.UI + 1,
         'or...');
-      if (glov_ui.buttonText({ x: 26, y: game_height - 18, text: 'Take no one'})) {
-        glov_ui.modalDialog({
-          title: 'Heartlessness!',
-          text: 'Their lives will surely be miserable under The Alliance. Are you sure you want to take on no additional passengers?',
-          buttons: {
-            'Yes': function () {
-              app.game_state = encounterInit;
+      if (glov_ui.buttonText({ x: 26, y: game_height - 18, text: chapters[state.chapter].no_passengers ? 'Continue...' : 'Take no one'})) {
+        if (chapters[state.chapter].no_passengers) {
+          app.game_state = encounterInit;
+        } else {
+          glov_ui.modalDialog({
+            title: 'Heartlessness!',
+            text: 'Their lives will surely be miserable under The Alliance. Are you sure you want to take on no additional passengers?',
+            buttons: {
+              'Yes': function () {
+                app.game_state = encounterInit;
+              },
+              'Back': null, // no callback
             },
-            'Back': null, // no callback
-          },
-        });
+          });
+        }
       }
     }
 
@@ -1195,6 +1242,69 @@ export function main(canvas)
     });
   }
 
+  function win(dt) {
+    drawShipBG(dt);
+
+    let x0 = game_width / 6;
+    let w = game_width / 1.5;
+    let y0 = game_height / 10;
+    let h = 136;
+    let x = x0;
+    let y = y0;
+    let size = glov_ui.font_height;
+
+    y += 8;
+    font.drawSizedAligned(style_summary, x, y, Z.UI + 1, size * 2,
+      glov_font.ALIGN.HCENTER, w, 0, 'Escape From The Alliance');
+    y += size * 2 + 4;
+    font.drawSizedAligned(style_summary, x, y, Z.UI + 1, size,
+      glov_font.ALIGN.HCENTER, w, 0, 'By Jimb Esser');
+    y += size;
+    font.drawSizedAligned(style_summary, x, y, Z.UI + 1, size,
+      glov_font.ALIGN.HCENTER, w, 0, 'Made in 48hrs for Ludum Dare 42');
+    y += size * 2;
+
+    let ship_stats = calcShipStats();
+    y += font.drawSizedWrapped(style_summary, x + 8, y, Z.UI + 1,
+      w - 16, 0, size,
+      `You ship carried ${ship_stats.cargo} refugees to their freedom`);
+    y += 8;
+    y += font.drawSizedWrapped(style_summary, x + 8, y, Z.UI + 1,
+      w - 16, 0, size,
+      `You ship carried ${state.deaths} refugees to their death`);
+    y += 8;
+
+    y += font.drawSizedWrapped(style_summary, x + 8, y, Z.UI + 1,
+      w - 16, 0, size,
+      'Thanks for playing!');
+    y += 8;
+
+    let button_w = 160;
+
+    if (glov_ui.buttonText({ x: game_width / 2 - button_w/2, y,
+      w: button_w,
+      text: 'Check out Splody on Steam and PS4!'}))
+    {
+      window.location = 'http://www.splody.com';
+    }
+    y += 20;
+
+    if (glov_ui.buttonText({ x: game_width / 2 - button_w/2, y,
+      w: button_w,
+      text: 'Replay'}))
+    {
+      window.location.reload();
+    }
+    y += 20;
+
+    glov_ui.panel({
+      x: x0,
+      y: y0,
+      w: w,
+      h: h,
+    });
+  }
+
   function special(dt) {
     drawShipBG(dt);
 
@@ -1213,6 +1323,7 @@ export function main(canvas)
       glov_font.ALIGN.HCENTER, w, 0, `Chapter ${state.chapter + 1}`);
     y += size * 2;
     let text = 'MISSING_TEXT';
+    let button = 'Dock at another port...';
     if (state.chapter === 1) {
       text = 'Okay, well, that fight was not so bad. However,' +
         ' your sensors show The Alliance armada is way bigger than' +
@@ -1220,16 +1331,75 @@ export function main(canvas)
         'Perhaps it would be nobler to get to a planet beyond the rim, beyond' +
         ' Alliance control, and take as many refugees with' +
         ' you as you can. Your ship is just about out of space though...';
+      button = 'Back to port to pick up refugees';
     } else if (state.chapter === 2) {
       text = 'That last bunch of passengers was an odd group, like an old joke,' +
         ' "A rabbi, a cop, and a doctor walk into a bar...", but at least the' +
-        ' skilled doctor can fix up your crew. Her younger brother is weird though,' +
+        ' skilled doctor can fix up your crew\'s injuries.\n\nHer younger brother is weird though,' +
         ' just stares at you blankly and says things like "Ben, good... in the Latin".';
     } else if (state.chapter === 3) {
-      text = 'In port you are approached by a group of 40 Etherians, a rare race of energy beings.' +
+      text = 'As you approach Planet Utopius, you are hailed by a group of 40 Etherians, a rare race of energy beings.' +
         '\n\nBeing somewhat incorporeal, they can all fit into a single cargo hold, but require energy hook-ups that can' +
         ' only be found if you remove one of your shields.';
-      text += '\n\n(If you choose to jettison a Shield in port, you will gain 20 bonus passengers)';
+      button = 'In to port...';
+    } else if (state.chapter === 4) {
+      text = 'Port Griffin is eerily empty, you see no one anywhere...';
+      button = 'Let\'s not dally long...';
+    } else if (state.chapter === 5) {
+      // marked as state.picked_up[6]
+      text = 'For some reason this *entire planet* is a desert. Weird. Luckily its full of' +
+        ' rather resourceful people, so if you make room in your ship for more refugees' +
+        ' some of them promise to tinker with your engines a bit.';
+      button = 'This can\'t possibly go wrong';
+    } else if (state.chapter === 6) {
+      let shields = state.slots.filter(function(slot) {
+        return slot.type === 'shield' && slot.hp;
+      });
+      if (shields.length === 2) {
+        text = 'Sure is nice having 2 SHIELD GENERATORS. You wonder if the Etherians' +
+          ' are being converted into living batteries by The Alliance right about now...';
+        button = 'Glad I\'m out of there';
+      } else if (state.slots.filter(function (slot) {
+        return slot.cargo > 20;
+      }).length && shields.length) {
+        // have the shield guys from earlier!
+        text = 'The Etherians you picked up earlier have been tinkering with your' +
+          ' remaining shield and have dramatically improved its heat dissipation!';
+        shields[0].heat_scale = 0.5;
+      } else {
+        text = 'A shiver runs down your spine.';
+      }
+    } else if (state.chapter === 7) {
+      let engines = state.slots.filter(function (slot) {
+        return slot.type === 'engine';
+      });
+      if (state.picked_up[6] && engines.length) {
+        text = 'Some spunky kid from that desert planet adjusted the fuel intake' +
+          ` on your engine${engines.length === 1 ? '' : 's'} to mix in something called` +
+          ' "metaclorians", doubling its evasion!';
+        button = 'Mesa like dis';
+        state.engine_factor = 2;
+      } else {
+        text = 'Another desert planet.  Who settles on these?';
+        button = 'Not me.';
+      }
+    } else if (state.chapter === 8) {
+      text = 'You\'re far enough away now that only the smaller, lighter Alliance fighters' +
+        ' seem to be able to catch up to you.';
+      button = 'Thank God.';
+    } else if (state.chapter === 9) {
+      text = 'As you start to land on this world which is seemingly entirely one giant jungle,' +
+        ' some refugees from the desert world start going on about how implausible it is that' +
+        ' an entire world would be just one biome.';
+      button = 'Like they can talk...';
+    } else if (state.chapter === 10) {
+      text = 'You\'re getting really far away from The Alliance, they\'ve all but' +
+        ' given up chasing you, it seems. Sensors show only one squadron still chasing you.';
+    } else if (state.chapter === 11) {
+      text = 'Beyond the rim. You made it.' +
+        '\n\nThere\'s no sign of The Alliance anywhere.'+
+        '\n\nYou think it\'s time to find a new home.';
+      button = 'FTW';
     }
     y += font.drawSizedWrapped(style_summary, x + 8, y, Z.UI + 1,
       w - 16, 0, size,
@@ -1239,9 +1409,13 @@ export function main(canvas)
     let button_w = 160;
     if (glov_ui.buttonText({ x: game_width / 2 - button_w/2, y,
       w: button_w,
-      text: state.chapter === 1 ? 'Back to port to pick up refugees' : 'Dock at another port...'}))
+      text: button}))
     {
-      app.game_state = manageInit;
+      if (chapters[state.chapter].win) {
+        app.game_state = winInit;
+      } else {
+        app.game_state = manageInit;
+      }
     }
 
     if (state.chapter === 1) {
@@ -1274,17 +1448,32 @@ export function main(canvas)
 
   }
 
+  const waves = [
+    // num ships, damage, scale
+    null,
+    [4, 5], // 1 - tutorial, then remove something
+    [8, 5], // 2
+    [15, 1, 0.5], // 3, then remove shields
+    [2, 20, 1.5], // 4
+    [8, 5], // 5
+    [10, 3, 0.75], // 6, then better shields
+    [8, 5], // 7, then better engines
+    [2, 30, 1.5], // 8
+    [6, 5], // 9
+    [5, 5], // 10
+    [8, 5], // 11
+    [4, 5], // 12
+  ];
   function nextWave() {
-    let num_ships = 2;
     let max_hp = 1;
-    let damage = 5;
-    if (state.chapter === 1) {
-      num_ships = 4;
-    }
+    let num_ships = waves[state.chapter][0];
+    let damage = waves[state.chapter][1];
+    let scale = waves[state.chapter][2] || 1;
     state.wave = {
       num_ships,
       max_hp,
       damage,
+      scale,
       ships: [],
     };
     state.messages = [];
@@ -1301,11 +1490,13 @@ export function main(canvas)
 
   function initState() {
     state = {
+      deaths: 0,
       tick_countdown: TICK_FIRST,
       slots: [],
       messages: [],
       on_priority: [],
       chapter: 0,
+      picked_up: {}, // which chapters we picked up people
     };
     for (let ii = 0; ii < ship_slots.length; ++ii) {
       let slot = {
@@ -1366,15 +1557,26 @@ export function main(canvas)
 
   function specialInit(dt) {
     app.game_state = special;
+    time_in_state = 0;
     ship_x_prev = SHIP_X;
-    ship_x_desired = SHIP_X_INTRO;
+    ship_x_desired = SHIP_X_SPECIAL;
     special(dt);
   }
 
   function introInit(dt) {
+    app.game_state = intro;
+    time_in_state = 0;
     ship_x_prev = game_width;
     ship_x_desired = SHIP_X_INTRO;
     intro(dt);
+  }
+
+  function winInit(dt) {
+    app.game_state = win;
+    time_in_state = 0;
+    ship_x_prev = SHIP_X;
+    ship_x_desired = SHIP_X_WIN;
+    win(dt);
   }
 
   function loading() {
@@ -1384,9 +1586,10 @@ export function main(canvas)
       $('.screen').hide();
       initState();
       if (DEBUG) {
-        state.chapter = 1;
+        tutorial = {};
+        state.chapter = 5;
       }
-      app.game_state = DEBUG ? encounterInit : introInit;
+      app.game_state = DEBUG ? manageInit : introInit;
     }
   }
 
