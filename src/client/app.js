@@ -48,6 +48,7 @@ const SHIP_X_ENCOUNTER = 18;
 const SHIP_X_MANAGE = (game_width - SHIP_W) + 18;
 const SHIP_X_INTRO = (game_width - SHIP_W) / 3;
 const SHIP_X_WIN = game_width - 18;
+const SHIP_X_LOSE = game_width + 20;
 const SHIP_X_SPECIAL = 0;
 let ship_x_prev = SHIP_X_ENCOUNTER;
 let ship_x_desired = SHIP_X_ENCOUNTER;
@@ -62,8 +63,8 @@ const ENEMY_SHIP_X0 = game_width + 64;
 const ENEMY_SHIP_X1 = SHIP_X + SHIP_W + (game_width - SHIP_W - SHIP_X) / 2;
 const ENEMY_SHIP_H = 64;
 const ENEMY_SHIP_SPEED = 40 / 1000; // pixels / ms
-const ENEMY_INITIAL_COUNTDOWN = DEBUG ? 0 : 7; // ticks
-const WIN_COUNTDOWN = DEBUG ? 1 : 5; // ticks
+const ENEMY_INITIAL_COUNTDOWN = DEBUG ? 7 : 7; // ticks
+const WIN_COUNTDOWN = DEBUG ? 5 : 5; // ticks
 
 const HEAT_DELTA = [-5, 5, 20];
 
@@ -218,22 +219,42 @@ export function main(canvas)
     },
   };
 
-  let ship_slots = [
-    { pos: [162 - 4, 32 - 8], start: 'weapon' },
-    { pos: [162, 64 - 8], start: 'cargo' }, //'weapon' },
-    { pos: [162, 192 + 8], start: 'weapon' },
-    { pos: [162 - 4, 224 + 8], start: 'cargo' }, //'weapon' },
-    { pos: [194, 96], start: 'engine' },
-    { pos: [194, 128], start: 'cargo' }, // 'engine' },
-    { pos: [194, 160], start: 'engine' },
-    { pos: [66, 96], start: 'shield' },
-    { pos: [66, 128], start: 'cargo' },
-    { pos: [66, 160], start: 'cargo' }, // 'shield' },
-    { pos: [162, 96], start: 'gen' },
-    { pos: [130, 96], start: 'repair' },
-    { pos: [34, 112], start: 'gen' },
-    { pos: [130, 160], start: 'life' },
-  ];
+  let ship_slots;
+  if (DEBUG) {
+    ship_slots = [
+      { pos: [162 - 4, 32 - 8], start: 'weapon' },
+      // { pos: [162, 64 - 8], start: 'cargo' }, //'weapon' },
+      // { pos: [162, 192 + 8], start: 'weapon' },
+      // { pos: [162 - 4, 224 + 8], start: 'cargo' }, //'weapon' },
+      // { pos: [194, 96], start: 'engine' },
+      // { pos: [194, 128], start: 'cargo' }, // 'engine' },
+      // { pos: [194, 160], start: 'engine' },
+      // { pos: [66, 96], start: 'shield' },
+      // { pos: [66, 128], start: 'cargo' },
+      // { pos: [66, 160], start: 'cargo' }, // 'shield' },
+      // { pos: [162, 96], start: 'gen' },
+      // { pos: [130, 96], start: 'repair' },
+      // { pos: [34, 112], start: 'gen' },
+      // { pos: [130, 160], start: 'life' },
+    ];
+  } else {
+    ship_slots = [
+      { pos: [162 - 4, 32 - 8], start: 'weapon' },
+      { pos: [162, 64 - 8], start: 'weapon' },
+      { pos: [162, 192 + 8], start: 'weapon' },
+      { pos: [162 - 4, 224 + 8], start: 'weapon' },
+      { pos: [194, 96], start: 'engine' },
+      { pos: [194, 128], start: 'engine' },
+      { pos: [194, 160], start: 'engine' },
+      { pos: [66, 96], start: 'shield' },
+      { pos: [66, 128], start: 'cargo' },
+      { pos: [66, 160], start: 'shield' },
+      { pos: [162, 96], start: 'gen' },
+      { pos: [130, 96], start: 'repair' },
+      { pos: [34, 112], start: 'gen' },
+      { pos: [130, 160], start: 'life' },
+    ];
+  }
 
   let state;
 
@@ -714,6 +735,7 @@ export function main(canvas)
         if (!targets.length) {
           // TODO
           log('Ship destroyed');
+          app.game_state = loseInit;
           break;
         } else {
           let slot = targets[Math.floor(Math.random() * targets.length)];
@@ -1305,6 +1327,50 @@ export function main(canvas)
     });
   }
 
+  function lose(dt) {
+    drawShipBG(dt);
+
+    let x0 = game_width / 6;
+    let w = game_width / 1.5;
+    let y0 = game_height / 6;
+    let h = 110;
+    let x = x0;
+    let y = y0;
+    let size = glov_ui.font_height;
+
+    y += 8;
+    font.drawSizedAligned(style_summary, x, y, Z.UI + 1, size * 2,
+      glov_font.ALIGN.HCENTER, w, 0, 'GAME OVER');
+    y += size * 2 + 4;
+
+    y += font.drawSizedWrapped(style_summary, x + 8, y, Z.UI + 1,
+      w - 16, 0, size,
+      `You ship carried ${state.deaths} refugees to their death`);
+    y += 18;
+
+    y += font.drawSizedWrapped(style_summary, x + 8, y, Z.UI + 1,
+      w - 16, 0, size,
+      'Thanks for playing, try again?');
+    y += 18;
+
+    let button_w = 160;
+
+    if (glov_ui.buttonText({ x: game_width / 2 - button_w/2, y,
+      w: button_w,
+      text: 'Replay'}))
+    {
+      window.location.reload();
+    }
+    y += 20;
+
+    glov_ui.panel({
+      x: x0,
+      y: y0,
+      w: w,
+      h: h,
+    });
+  }
+
   function special(dt) {
     drawShipBG(dt);
 
@@ -1577,6 +1643,14 @@ export function main(canvas)
     ship_x_prev = SHIP_X;
     ship_x_desired = SHIP_X_WIN;
     win(dt);
+  }
+
+  function loseInit(dt) {
+    app.game_state = lose;
+    time_in_state = 0;
+    ship_x_prev = SHIP_X;
+    ship_x_desired = SHIP_X_LOSE;
+    lose(dt);
   }
 
   function loading() {
