@@ -69,7 +69,7 @@ const ENEMY_SHIP_SPEED = 40 / 1000; // pixels / ms
 const ENEMY_INITIAL_COUNTDOWN = (DEBUG ? 1 : 7) * TICK; // ticks
 const ENEMY_FIRE_DURATION = 330;
 const FIRE_DURATION = 250;
-const WIN_COUNTDOWN = (DEBUG ? 5 : 5) * TICK; // ticks
+const WIN_COUNTDOWN = (DEBUG ? 3 : 3) * TICK; // ticks
 
 const HEAT_DELTA = [-5, 5, 20];
 
@@ -298,7 +298,15 @@ export function main(canvas)
       }
     }
 
-    sound_manager.loadSound('test');
+    sound_manager.loadSound('shoot_mine');
+    sound_manager.loadSound('shoot_miss');
+    sound_manager.loadSound('shoot_shield');
+    sound_manager.loadSound('shoot_component');
+    sound_manager.loadSound('shoot_cargo');
+    sound_manager.loadSound('low_o2');
+    sound_manager.loadSound('overheat');
+    sound_manager.loadSound('win');
+    sound_manager.loadSound('shields_down');
 
     const origin_0_0 = { origin: math_device.v2Build(0, 0) };
 
@@ -317,6 +325,7 @@ export function main(canvas)
 
 
     sprites.ship = loadSprite('ship.png', SHIP_W, SHIP_H, origin_0_0);
+    sprites.shields = loadSprite('shields.png', SHIP_W, SHIP_H, origin_0_0);
     sprites.enemy_fighter = loadSprite('enemy_fighter.png', 64, 64);
 
     sprites.white = loadSprite('white', 1, 1, origin_0_0);
@@ -503,6 +512,7 @@ export function main(canvas)
 
   function triggerWin() {
     log('Encounter won!');
+    sound_manager.play('win');
     state.wave.won = true;
     state.wave.win_countdown = WIN_COUNTDOWN;
     for (let ii = 0; ii < state.slots.length; ++ii) {
@@ -564,10 +574,14 @@ export function main(canvas)
           });
         }
         if (slot.heat > value_defs.heat.max) {
-          let extra = slot.heat - value_defs.heat.max; // TODO: scale damage?
           slot.heat = value_defs.heat.max;
           slot.hp = Math.max(slot.hp + D * OVERHEAT_DAMAGE, 0);
           slot.damage_at = glov_engine.getFrameTimestamp();
+          let time_since_sound = glov_engine.getFrameTimestamp() - (state.overheat_sound || 0);
+          if (time_since_sound >= 1000) {
+            state.overheat_sound = glov_engine.getFrameTimestamp();
+            sound_manager.play('overheat');
+          }
           if (!slot.hp) {
             log(slot.type.toUpperCase() + ' destroyed by HEAT');
             continue;
@@ -629,6 +643,7 @@ export function main(canvas)
               ship.hp = 0;
               slot.fire_at = [ship.x, ship.y];
               slot.firing = FIRE_DURATION;
+              sound_manager.play('shoot_mine');
             }
           } else {
             slot.charge = Math.min(Math.max(slot.charge + D * CHARGE_DELTA[slot.power], 0), value_defs.charge.max);
@@ -638,6 +653,14 @@ export function main(canvas)
     }
 
     let ship_stats = calcShipStats();
+    if (ship_stats.shield > 15) {
+      state.shields_up = true;
+    }
+    if (!ship_stats.shield && state.shields_up) {
+      state.shields_up = false;
+      sound_manager.play('shields_down');
+    }
+
 
     if (state.chapter === 1) {
       if (tutorial.weapon && ship_stats.charge > 20) {
@@ -691,6 +714,13 @@ export function main(canvas)
         },
       });
     }
+    if (state.o2 < 5 && !ship_stats.o2) {
+      let time_since_sound = glov_engine.getFrameTimestamp() - (state.last_o2_warn || 0);
+      if (time_since_sound > 5000) {
+        state.last_o2_warn = glov_engine.getFrameTimestamp();
+        sound_manager.play('low_o2');
+      }
+    }
     if (state.o2 < -O2_CONSUMPTION) {
       state.o2 = 0;
       // pick a random slot, kill a passenger
@@ -701,6 +731,7 @@ export function main(canvas)
           // TODO: log (and combine with previous log)
           --slot.cargo;
           state.deaths++;
+          // SOUND: o2 death
         }
       }
     }
@@ -753,10 +784,12 @@ export function main(canvas)
       // Fire!
       // check vs evade
       let damage = state.wave.damage;
+      let sound = null;
       if (Math.random() < evade) {
         // miss!
         log('Enemy misses!');
         damage = 0;
+        sound = 'shoot_miss';
         if (ship.y < game_height / 3) {
           ship.fire_at = [SHIP_W - 60, SHIP_H / 4];
         } else if (ship.y < game_height * 2 / 3) {
@@ -786,6 +819,7 @@ export function main(canvas)
           ];
           ship.fire_at_vert = panel_types[slot.type].vert;
         }
+        sound = 'shoot_shield';
         if (damage >= slot.shield) {
           damage -= slot.shield;
           slot.shield = 0;
@@ -799,10 +833,13 @@ export function main(canvas)
         // TODO: Maybe can target slots with no HP too, to make it easier?
         let targets = state.slots.filter(hasHP);
         if (!targets.length) {
+          // SOUND: bigger, better explosion
+          sound_manager.play('shoot_component');
           log('Ship destroyed');
           app.game_state = loseInit;
           break;
         } else {
+          sound = 'shoot_component';
           let slot = targets[Math.floor(Math.random() * targets.length)];
           ship.fire_at = [
             ship_slots[slot.idx].pos[0] + (panel_types[slot.type].vert ? PANEL_H : PANEL_W) / 2,
@@ -811,12 +848,16 @@ export function main(canvas)
           ship.fire_at_vert = panel_types[slot.type].vert;
           assert(slot.hp);
           if (slot.type === 'cargo') {
+            if (slot.cargo) {
+              sound = 'shoot_cargo';
+            }
             let deaths = Math.min(slot.cargo, Math.ceil(damage / 5));
             state.deaths += deaths;
             slot.cargo = Math.max(0, slot.cargo - deaths);
             if (slot.cargo === 0) {
               // if no people left, then damage to HP
               if (damage >= slot.hp) {
+                // SOUND component destroyed
                 log(slot.type.toUpperCase() + ' destroyed by ENEMY');
                 slot.hp = 0;
                 slot.damage_at = glov_engine.getFrameTimestamp();
@@ -826,6 +867,7 @@ export function main(canvas)
               }
             }
           } else if (damage >= slot.hp) {
+            // SOUND component destroyed
             log(slot.type.toUpperCase() + ' destroyed by ENEMY');
             slot.hp = 0;
             slot.damage_at = glov_engine.getFrameTimestamp();
@@ -834,6 +876,9 @@ export function main(canvas)
             slot.damage_at = glov_engine.getFrameTimestamp();
           }
         }
+      }
+      if (sound) {
+        sound_manager.play(sound);
       }
       ship.firing = ENEMY_FIRE_DURATION;
       ship.fire_countdown = (2 + Math.random() * 2) * TICK;
@@ -1222,6 +1267,13 @@ export function main(canvas)
     doTick(dt);
 
     drawShipBG(dt);
+    if (state.shields_up) {
+      sprites.shields.draw({
+        x: SHIP_X, y: SHIP_Y, z: Z.SHIP + 0.5,
+        size: [SHIP_W, SHIP_H],
+        frame: 0,
+      });
+    }
     drawSlots(dt);
     drawWave(dt);
     drawShipSummary(dt);
@@ -1816,6 +1868,7 @@ export function main(canvas)
       ships: [],
     };
     state.messages = [];
+    state.shields_up = false;
     let min_dist = (game_height - ENEMY_SHIP_H * 2) / (num_ships - 1);
     let move_dist = Math.min(game_height / 4, min_dist / 2);
     for (let ii = 0; ii < num_ships; ++ii) {
