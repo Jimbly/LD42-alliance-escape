@@ -83,7 +83,7 @@ const OVERHEAT_DAMAGE = -5;
 const AUTOCOOL_TIME = 5 * TICK;
 
 const REPAIR_FACTOR = 5;
-const REPAIR_SIZE = 5;
+const REPAIR_SIZE = 1/5;
 
 export function main(canvas)
 {
@@ -577,7 +577,9 @@ export function main(canvas)
         if (slot.heat > value_defs.heat.max) {
           slot.heat = value_defs.heat.max;
           slot.hp = Math.max(slot.hp + D * OVERHEAT_DAMAGE, 0);
-          slot.damage_at = glov_engine.getFrameTimestamp();
+          if (!slot.damage_at || (glov_engine.getFrameTimestamp() - slot.damage_at > 200)) {
+            slot.damage_at = glov_engine.getFrameTimestamp();
+          }
           let time_since_sound = glov_engine.getFrameTimestamp() - (state.overheat_sound || 0);
           if (time_since_sound >= 1000) {
             state.overheat_sound = glov_engine.getFrameTimestamp();
@@ -614,7 +616,7 @@ export function main(canvas)
             let repair_spend = Math.min(slot.hp, REPAIR_SIZE);
             // Look for other slot that is damaged
             let targets = state.slots.filter(function (slot) {
-              return slot.type !== 'repair' && slot.hp && slot.hp < value_defs.hp.max - REPAIR_FACTOR * repair_spend;
+              return slot.type !== 'repair' && slot.hp && slot.hp <= value_defs.hp.max - REPAIR_FACTOR * repair_spend;
             });
             if (targets.length) {
               let target_slot = targets[Math.floor(Math.random() * targets.length)];
