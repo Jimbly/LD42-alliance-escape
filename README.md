@@ -17,5 +17,4 @@ TODO:
     Enemy shoot hit people (separate sound?)
     Passenger suffocates
     Auto cool
-    UI - rollovers
   Music

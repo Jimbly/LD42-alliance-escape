@@ -967,6 +967,7 @@ export function main(canvas)
             over = 1;
           }
           if (clicked) {
+            glov_ui.playUISound('button_click');
             state.remove_slot = ii;
           }
           if (state.remove_slot === ii) {
@@ -1011,6 +1012,7 @@ export function main(canvas)
               over = 1;
             }
             if (clicked) {
+              glov_ui.playUISound('button_click');
               let idx = state.on_priority.indexOf(ii);
               if (idx !== -1) {
                 state.on_priority.splice(idx, 1);
@@ -1027,6 +1029,9 @@ export function main(canvas)
             size: [PANEL_H, PANEL_H],
             frame: slot.autooff || disabled && over ? 7 : slot.autocool ? 6 : (slot.power * 2 + over),
           });
+        }
+        if (over) {
+          glov_ui.setMouseOver(slot);
         }
         // Draw values
         for (let jj = 0; jj < slot_type_def.values.length; ++jj) {
@@ -2015,10 +2020,10 @@ export function main(canvas)
       initState();
       if (DEBUG) {
         tutorial = {};
-        //state.chapter = 3;
+        state.chapter = 3;
         //planet_index = 1;
       }
-      app.game_state = DEBUG ? introInit : introInit;
+      app.game_state = DEBUG ? manageInit : introInit;
     }
   }
 
