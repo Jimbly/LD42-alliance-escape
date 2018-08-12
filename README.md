@@ -11,7 +11,7 @@ TODO:
     If not, if a hold gets to 0 passengers, mark it as destroyed!
     Some way to over-power nodes again?
   Visuals
-    Weapons and Engines
+    Engines
     Weapons fire / damage on the half-tick, so it's more visible on the bars
       Or, increases are smooth/analog, decreases are discrete
       Enemy Fire should also be about 1/4th as long, distracts from other blinking things

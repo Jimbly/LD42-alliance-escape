@@ -56,7 +56,7 @@ let SHIP_X = SHIP_X_ENCOUNTER;
 let time_in_state = 0;
 const SHIP_Y = 0;
 const TICK_FIRST = DEBUG ? 1000 : 1000;
-const TICK_EACH = DEBUG ? 1000 : 1000;
+const TICK_EACH = DEBUG ? 200 : 1000;
 const MAX_POWER = 2;
 
 const ENEMY_SHIP_X0 = game_width + 64;
@@ -220,22 +220,22 @@ export function main(canvas)
   };
 
   let ship_slots;
-  if (DEBUG) {
+  if (DEBUG && false) {
     ship_slots = [
       { pos: [162 - 4, 32 - 8], start: 'weapon' },
-      // { pos: [162, 64 - 8], start: 'cargo' }, //'weapon' },
-      // { pos: [162, 192 + 8], start: 'weapon' },
-      // { pos: [162 - 4, 224 + 8], start: 'cargo' }, //'weapon' },
-      // { pos: [194, 96], start: 'engine' },
-      // { pos: [194, 128], start: 'cargo' }, // 'engine' },
-      // { pos: [194, 160], start: 'engine' },
-      // { pos: [66, 96], start: 'shield' },
-      // { pos: [66, 128], start: 'cargo' },
-      // { pos: [66, 160], start: 'cargo' }, // 'shield' },
-      // { pos: [162, 96], start: 'gen' },
-      // { pos: [130, 96], start: 'repair' },
-      // { pos: [34, 112], start: 'gen' },
-      // { pos: [130, 160], start: 'life' },
+      { pos: [162, 64 - 8], start: 'cargo' }, //'weapon' },
+      { pos: [162, 192 + 8], start: 'weapon' },
+      { pos: [162 - 4, 224 + 8], start: 'cargo' }, //'weapon' },
+      { pos: [194, 96], start: 'engine' },
+      { pos: [194, 128], start: 'cargo' }, // 'engine' },
+      { pos: [194, 160], start: 'engine' },
+      { pos: [66, 96], start: 'shield' },
+      { pos: [66, 128], start: 'cargo' },
+      { pos: [66, 160], start: 'cargo' }, // 'shield' },
+      { pos: [162, 96], start: 'gen' },
+      { pos: [130, 96], start: 'repair' },
+      { pos: [34, 112], start: 'gen' },
+      { pos: [130, 160], start: 'life' },
     ];
   } else {
     ship_slots = [
@@ -314,6 +314,9 @@ export function main(canvas)
 
     sprites.panel_load = loadSprite('panel-load.png', PANEL_W, PANEL_H, origin_0_0);
     sprites.panel_load_vert = loadSprite('panel-load-vert.png', PANEL_H, PANEL_W, origin_0_0);
+
+    sprites.gun_top = loadSprite('gun-top.png', 32, 13, origin_0_0);
+    sprites.gun_bot = loadSprite('gun-bot.png', 32, 13, origin_0_0);
 
     // sprites.test_animated = loadSprite('test_sprite.png', [13, 13], [13, 13]);
     // sprites.animation = createAnimation({
@@ -797,6 +800,13 @@ export function main(canvas)
           size: [vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H],
           frame: 0,
         });
+        if (slot.type === 'weapon') {
+          sprites[pos[1] < SHIP_H / 2 ? 'gun_top' : 'gun_bot'].draw({
+            x: x - 31, y: y + 9, z: Z.SHIP + 1.5,
+            size: [32, 13],
+            frame: 0,
+          });
+        }
       } else {
         sprites['panel_destroyed' + (vert ? '_vert' : '')].draw({
           x, y, z: Z.SHIP + 2,
@@ -922,8 +932,7 @@ export function main(canvas)
           }
         }
         if (slot.fire_at) {
-          // TODO: display guns
-          drawFire(true, false, x + 40, y + PANEL_H / 2, slot.fire_at[0], slot.fire_at[1], 1);
+          drawFire(true, false, x - 29, y + PANEL_H / 2 + 1 + (y < SHIP_H / 2 ? -3 : 0), slot.fire_at[0], slot.fire_at[1], 1);
         }
       }
     }
@@ -1663,7 +1672,7 @@ export function main(canvas)
         tutorial = {};
         state.chapter = 5;
       }
-      app.game_state = DEBUG ? manageInit : introInit;
+      app.game_state = DEBUG ? encounterInit : introInit;
     }
   }
 
