@@ -66,7 +66,7 @@ const ENEMY_SHIP_X0 = game_width + 64;
 const ENEMY_SHIP_X1 = SHIP_X + SHIP_W + (game_width - SHIP_W - SHIP_X) / 2;
 const ENEMY_SHIP_H = 64;
 const ENEMY_SHIP_SPEED = 40 / 1000; // pixels / ms
-const ENEMY_INITIAL_COUNTDOWN = (DEBUG ? 1 : 7) * TICK; // ticks
+const ENEMY_INITIAL_COUNTDOWN = (DEBUG ? 7 : 7) * TICK; // ticks
 const ENEMY_FIRE_DURATION = 330;
 const FIRE_DURATION = 250;
 const WIN_COUNTDOWN = (DEBUG ? 0.5 : 3) * TICK; // ticks
@@ -2111,10 +2111,10 @@ export function main(canvas)
       initState();
       if (DEBUG) {
         tutorial = {};
-        state.chapter = 10;
-        planet_index = 1;
+        //state.chapter = 10;
+        //planet_index = 1;
       }
-      app.game_state = DEBUG ? manageInit : introInit;
+      app.game_state = DEBUG ? introInit : introInit;
     }
   }
 
