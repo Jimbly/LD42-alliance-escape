@@ -85,6 +85,9 @@ const AUTOCOOL_TIME = 5 * TICK;
 const REPAIR_FACTOR = 5;
 const REPAIR_SIZE = 1/5;
 
+const VOLUME_MUSIC = 0.5;
+const VOLUME_MUSIC_ENCOUNTER = 0.33;
+
 export function main(canvas)
 {
   const glov_engine = require('./glov/engine.js');
@@ -308,6 +311,7 @@ export function main(canvas)
     sound_manager.loadSound('win');
     sound_manager.loadSound('shields_down');
     sound_manager.loadSound('explosion');
+    sound_manager.loadSound('music_special');
 
     const origin_0_0 = { origin: math_device.v2Build(0, 0) };
 
@@ -514,6 +518,7 @@ export function main(canvas)
   function triggerWin() {
     log('Encounter won!');
     sound_manager.play('win');
+    sound_manager.playMusic('encounter', 0, sound_manager.FADE);
     state.wave.won = true;
     state.wave.win_countdown = WIN_COUNTDOWN;
     for (let ii = 0; ii < state.slots.length; ++ii) {
@@ -1957,6 +1962,7 @@ export function main(canvas)
   }
 
   function encounterInit(dt) {
+    sound_manager.playMusic('encounter', VOLUME_MUSIC_ENCOUNTER, sound_manager.FADE);
     nextWave();
     app.game_state = encounter;
     time_in_state = 0;
@@ -1999,6 +2005,7 @@ export function main(canvas)
 
   let have_scores = false;
   function specialInit(dt) {
+    sound_manager.playMusic('music_special', VOLUME_MUSIC, sound_manager.FADE);
     score_system.setScore('all', { level: state.chapter, cargo: calcShipStats().cargo, deaths: state.deaths }, function () {
       have_scores = true;
     });
@@ -2011,6 +2018,7 @@ export function main(canvas)
   }
 
   function introInit(dt) {
+    sound_manager.playMusic('music_special', VOLUME_MUSIC, sound_manager.FADE);
     score_system.updateHighScores(function () {
       have_scores = true;
     });
