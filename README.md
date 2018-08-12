@@ -5,8 +5,6 @@ TODO:
   Gameplay
     Pause?
     After polish, tweak waves[]
-    Should destroyed slots become cargo holds automatically?  Or slightly repaired?
-    If not, if a hold gets to 0 passengers, mark it as destroyed!
     Some way to over-power nodes again?
   Visuals
     Weapons fire / damage on the half-tick, so it's more visible on the bars

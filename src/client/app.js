@@ -486,7 +486,8 @@ export function main(canvas)
   }
 
   function hasHP(elem) {
-    return elem.type === 'cargo' ? elem.cargo > 0 : elem.hp > 0;
+    //return elem.type === 'cargo' ? elem.cargo > 0 : elem.hp > 0;
+    return elem.hp > 0;
   }
   function isActiveShield(slot) {
     return slot.hp && slot.type === 'shield' && slot.shield;
@@ -758,7 +759,6 @@ export function main(canvas)
         // TODO: Maybe can target slots with no HP too, to make it easier?
         let targets = state.slots.filter(hasHP);
         if (!targets.length) {
-          // TODO
           log('Ship destroyed');
           app.game_state = loseInit;
           break;
@@ -774,6 +774,10 @@ export function main(canvas)
             let deaths = Math.min(slot.cargo, Math.ceil(damage / 5));
             state.deaths += deaths;
             slot.cargo = Math.max(0, slot.cargo - deaths);
+            if (slot.cargo === 0) {
+              log(slot.type.toUpperCase() + ' destroyed by ENEMY');
+              slot.hp = 0;
+            }
           } else if (damage >= slot.hp) {
             log(slot.type.toUpperCase() + ' destroyed by ENEMY');
             slot.hp = 0;
@@ -838,12 +842,12 @@ export function main(canvas)
       } else {
         sprites['panel_destroyed' + (vert ? '_vert' : '')].draw({
           x, y, z: Z.SHIP + 2,
-          size: [slot_type_def.vert ? PANEL_H : PANEL_W, slot_type_def.vert ? PANEL_W : PANEL_H],
+          size: [vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H],
           frame: 0,
         });
       }
       if (slot.type === 'cargo') {
-        if (state.chapter !== 1) {
+        if (state.chapter !== 1 && slot.hp) {
           // TODO: draw people moving around
           font.drawSizedAligned(style_value, x, y, Z.SHIP + 4, glov_ui.font_height,
             glov_font.ALIGN.HVCENTER, vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H,
@@ -874,7 +878,7 @@ export function main(canvas)
           if (state.remove_slot === ii) {
             sprites['panel_load' + (vert ? '_vert' : '')].draw({
               x, y, z: Z.SHIP + 5,
-              size: [slot_type_def.vert ? PANEL_H : PANEL_W, slot_type_def.vert ? PANEL_W : PANEL_H],
+              size: [vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H],
               frame: 0,
             });
           } else if (over) {
@@ -884,7 +888,7 @@ export function main(canvas)
             }
             sprites.panel_help[img].draw({
               x, y, z: Z.SHIP + 5,
-              size: [slot_type_def.vert ? PANEL_H : PANEL_W, slot_type_def.vert ? PANEL_W : PANEL_H],
+              size: [vert ? PANEL_H : PANEL_W, vert ? PANEL_W : PANEL_H],
               frame: 0,
             });
           }
@@ -1826,9 +1830,9 @@ export function main(canvas)
       initState();
       if (DEBUG) {
         tutorial = {};
-        //state.chapter = 1;
+        state.chapter = 3;
       }
-      app.game_state = DEBUG ? introInit : introInit;
+      app.game_state = DEBUG ? manageInit : introInit;
     }
   }
 
