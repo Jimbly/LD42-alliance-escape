@@ -59,7 +59,7 @@ let ship_x_desired = SHIP_X_ENCOUNTER;
 let SHIP_X = SHIP_X_ENCOUNTER;
 let time_in_state = 0;
 const SHIP_Y = 0;
-const TICK = DEBUG ? 1000 : 1000;
+const TICK = DEBUG ? 500 : 1000;
 const MAX_POWER = 2;
 
 const ENEMY_SHIP_X0 = game_width + 64;
@@ -69,7 +69,7 @@ const ENEMY_SHIP_SPEED = 40 / 1000; // pixels / ms
 const ENEMY_INITIAL_COUNTDOWN = (DEBUG ? 1 : 7) * TICK; // ticks
 const ENEMY_FIRE_DURATION = 330;
 const FIRE_DURATION = 250;
-const WIN_COUNTDOWN = (DEBUG ? 3 : 3) * TICK; // ticks
+const WIN_COUNTDOWN = (DEBUG ? 0.5 : 3) * TICK; // ticks
 
 const HEAT_DELTA = [-5, 5, 20];
 
@@ -561,12 +561,12 @@ export function main(canvas)
         continue;
       }
       if (slot.heat !== undefined) {
-        slot.heat += D * HEAT_DELTA[slot.power] * (slot.heat_scale || 1);
+        slot.heat += D * HEAT_DELTA[slot.power] * (slot.power > 0 ? slot.heat_scale || 1 : 1);
         slot.heat = Math.max(slot.heat, 0);
         if (tutorial.overheat && slot.heat >= value_defs.heat.max * 0.9) {
           tutorial.overheat = false;
           glov_ui.modalDialog({
-            title: 'TUTORIAL',
+            title: 'TUTORIAL - OVERHEATING',
             text: 'When equipment is on, it generates heat. When its heat capacity' +
               ' is full, it will take damage.\n\nRight now, ' +
               panel_types[slot.type].name + ' is overheating! Quickly turn it off' +
@@ -611,7 +611,7 @@ export function main(canvas)
           slot.shield = Math.min(Math.max(slot.shield + D * SHIELD_DELTA[slot.power], 0), value_defs.shield.max);
           break;
         case 'engine':
-          slot.evade = Math.min(Math.max(slot.evade + D * EVADE_DELTA[slot.power] * (state.engine_factor || 1), 0), value_defs.evade.max);
+          slot.evade = Math.min(Math.max(slot.evade + D * EVADE_DELTA[slot.power] * (slot.power > 0 ? state.engine_factor || 1 : 1), 0), (value_defs.evade.max * (state.engine_factor || 1)));
           break;
         case 'life':
           slot.o2 = Math.min(Math.max(slot.o2 + D * O2PROD_DELTA[slot.power], 0), value_defs.o2.max);
@@ -674,7 +674,7 @@ export function main(canvas)
       if (tutorial.weapon && ship_stats.charge > 20) {
         tutorial.weapon = false;
         glov_ui.modalDialog({
-          title: 'TUTORIAL',
+          title: 'TUTORIAL - WEAPONS',
           text: 'Great! The WEAPON will fire, destroying one Alliance Fighter once its CHARGE is full.',
           buttons: {
             'Okay': null,
@@ -711,10 +711,10 @@ export function main(canvas)
     const O2_PROD_FACTOR = O2_CONSUMPTION * 4 / 100;
     state.o2 = (state.o2 - D * O2_CONSUMPTION) + ship_stats.o2 * D * O2_PROD_FACTOR;
     state.o2 = Math.min(state.o2, 100);
-    if (tutorial.o2 && state.o2 < 5) {
+    if (tutorial.o2 && state.o2 < 5 && ship_stats.cargo) {
       tutorial.o2 = false;
       glov_ui.modalDialog({
-        title: 'TUTORIAL',
+        title: 'TUTORIAL - OXYGEN',
         text: 'Your ship\'s oxygen supply is dangerously low!\n\nTurn ON your' +
         ' LIFE SUPPORT to replenish it, or your passengers will start dying!',
         buttons: {
@@ -766,7 +766,7 @@ export function main(canvas)
       if (tutorial.shield === 1) {
         tutorial.shield = 2;
         glov_ui.modalDialog({
-          title: 'TUTORIAL',
+          title: 'TUTORIAL - SHIELDS',
           text: 'The enemy is about to start firing. Raise your shields by clicking to turn ON one SHIELD GENERATOR.',
           buttons: {
             'Okay': null,
@@ -777,7 +777,7 @@ export function main(canvas)
         // check if shields have been raised
         if (ship_stats.shield > 20) {
           glov_ui.modalDialog({
-            title: 'TUTORIAL',
+            title: 'TUTORIAL - SHIELDS',
             text: 'Good! The Shield will prevent all damage, and the SHIELD GENERATOR will continue to replenish your Shield until it is turned off, or starts overheating.\n\n' +
               'Next, you want to turn ON one WEAPON to start firing back',
             buttons: {
@@ -1047,6 +1047,9 @@ export function main(canvas)
           if (value_type) {
             let v = slot[value_type];
             let max = value_defs[value_type].max;
+            if (value_type === 'evade') {
+              max *= (state.engine_factor || 1);
+            }
             let label = value_defs[value_type].label;
             let bar_x = vert ? x + jj * 8 + 4 : x + 25;
             let bar_y = vert ? y + 39 : y + 8 * jj + 7;
@@ -1096,7 +1099,7 @@ export function main(canvas)
         continue;
       }
       let dist = ENEMY_SHIP_SPEED * dt;
-      if (ship.x > ENEMY_SHIP_X1) {
+      if (ship.x > ENEMY_SHIP_X1 && !glov_ui.modal_dialog) {
         ship.x = Math.max(ship.x - dist, ENEMY_SHIP_X1);
       }
       let x = ship.x + ship.magx * Math.cos(ts * ship.period + ship.offs);
@@ -1129,7 +1132,7 @@ export function main(canvas)
     let bar_x = x + size - 4;
     let bar_y_offs = 2 * 0.75;
     let bar_h = 14 * 0.75;
-    let bar_w = 100;
+    let bar_w = 106;
     let z_text = Z.UI + 3;
 
     font.drawSized(style_summary, x, y, z_text, size, 'SHIP SUMMARY');
@@ -1659,7 +1662,7 @@ export function main(canvas)
         drawme = true;
       }
       if (ii < 15 || drawme) {
-        drawSet([`#${ii+1}`, score_system.formatName(s), s.score.level, s.score.cargo, s.score.deaths], style);
+        drawSet([`#${ii+1}`, score_system.formatName(s), (s.score.level >= 11) ? 'WON' : s.score.level, s.score.cargo, s.score.deaths], style);
       }
     }
     y += 4;
@@ -1819,7 +1822,7 @@ export function main(canvas)
     } else if (state.chapter === 8) {
       text = 'You\'re far enough away now that only the smaller, lighter Alliance fighters' +
         ' seem to be able to catch up to you.';
-      button = 'Thank God.';
+      button = 'Thank The One.';
       planet_index = 1;
     } else if (state.chapter === 9) {
       text = 'As you start to land on this world which is seemingly entirely one giant jungle,' +
@@ -1889,18 +1892,18 @@ export function main(canvas)
   const waves = [
     // num ships, damage, scale
     null,
-    [4, 5], // 1 - tutorial, then remove something
-    [8, 5], // 2
-    [15, 1, 0.5], // 3, then remove shields
-    [2, 20, 1.5], // 4
-    [8, 5], // 5
-    [10, 3, 0.75], // 6, then better shields
-    [8, 5], // 7, then better engines
-    [2, 30, 1.5], // 8
-    [6, 5], // 9
-    [5, 5], // 10
-    [8, 5], // 11
-    [4, 5], // 12
+    [4, 5], // 1 - tutorial, then remove something; battle is fine
+    [8, 5], // 2 - a bit hard for battle #2
+    [15, 1, 0.5], // 3, not too hard, one shield can handle it - then remove shields
+    [2, 20, 1.5], // 4, easy peasy if you have to guns
+    [8, 5], // 5, took a decent amount of damage, needed to start using engines
+    [10, 3, 0.75], // 6, not bad -  then better shields
+    [8, 5], // 7, not bad - then better engines
+    [2, 30, 1.5], // 8 going to be tough if removing weapon!
+    [5, 5], // 9 - a bit long with just 1 weapon, drop from 6 to 5
+    [4, 5], // 10 - same, drop from 5 to 4
+    [7, 5], // 11 - really hard @ 8, drop to 7
+    [4, 5], // N/A
   ];
   function nextWave() {
     let max_hp = 1;
@@ -2065,7 +2068,7 @@ export function main(canvas)
       initState();
       if (DEBUG) {
         tutorial = {};
-        //state.chapter = 3;
+        state.chapter = 10;
         //planet_index = 1;
       }
       app.game_state = DEBUG ? introInit : introInit;
