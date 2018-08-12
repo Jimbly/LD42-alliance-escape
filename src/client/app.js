@@ -55,16 +55,17 @@ let ship_x_desired = SHIP_X_ENCOUNTER;
 let SHIP_X = SHIP_X_ENCOUNTER;
 let time_in_state = 0;
 const SHIP_Y = 0;
-const TICK_FIRST = DEBUG ? 1000 : 1000;
-const TICK_EACH = DEBUG ? 1000 : 1000;
+const TICK = DEBUG ? 1000 : 1000;
 const MAX_POWER = 2;
 
 const ENEMY_SHIP_X0 = game_width + 64;
 const ENEMY_SHIP_X1 = SHIP_X + SHIP_W + (game_width - SHIP_W - SHIP_X) / 2;
 const ENEMY_SHIP_H = 64;
 const ENEMY_SHIP_SPEED = 40 / 1000; // pixels / ms
-const ENEMY_INITIAL_COUNTDOWN = DEBUG ? 7 : 7; // ticks
-const WIN_COUNTDOWN = DEBUG ? 5 : 5; // ticks
+const ENEMY_INITIAL_COUNTDOWN = (DEBUG ? 1 : 7) * TICK; // ticks
+const ENEMY_FIRE_DURATION = 330;
+const FIRE_DURATION = 250;
+const WIN_COUNTDOWN = (DEBUG ? 5 : 5) * TICK; // ticks
 
 const HEAT_DELTA = [-5, 5, 20];
 
@@ -75,7 +76,7 @@ const O2PROD_DELTA = [-25, 25];
 const GEN_DELTA = [-0.5, 1];
 const POWER_BASE = 3;
 const OVERHEAT_DAMAGE = -5;
-const OVERHEAT_TICKS = 5;
+const AUTOCOOL_TIME = 5 * TICK;
 
 const REPAIR_FACTOR = 5;
 const REPAIR_SIZE = 5;
@@ -499,19 +500,29 @@ export function main(canvas)
     state.wave.win_countdown = WIN_COUNTDOWN;
     for (let ii = 0; ii < state.slots.length; ++ii) {
       let slot = state.slots[ii];
-      slot.fire_at = null;
       slot.power = 0;
     }
   }
 
-  function doTick() {
+  function doTick(dt) {
+    let D = dt / TICK;
     if (glov_ui.modal_dialog) {
       return;
     }
     if (state.wave.won) {
-      --state.wave.win_countdown;
-      if (!state.wave.win_countdown) {
+      state.wave.win_countdown -= dt;
+      if (state.wave.win_countdown < 0) {
         app.game_state = specialInit;
+      }
+      for (let ii = 0; ii < state.slots.length; ++ii) {
+        let slot = state.slots[ii];
+        if (slot.type === 'weapon' && slot.firing) {
+          slot.firing -= dt;
+          if (slot.firing <= 0) {
+            slot.firing = 0;
+            slot.fire_at = null;
+          }
+        }
       }
       return;
     }
@@ -527,7 +538,7 @@ export function main(canvas)
         continue;
       }
       if (slot.heat !== undefined) {
-        slot.heat += HEAT_DELTA[slot.power] * (slot.heat_scale || 1);
+        slot.heat += D * HEAT_DELTA[slot.power] * (slot.heat_scale || 1);
         slot.heat = Math.max(slot.heat, 0);
         if (tutorial.overheat && slot.heat >= value_defs.heat.max * 0.9) {
           tutorial.overheat = false;
@@ -548,13 +559,14 @@ export function main(canvas)
         if (slot.heat > value_defs.heat.max) {
           let extra = slot.heat - value_defs.heat.max; // TODO: scale damage?
           slot.heat = value_defs.heat.max;
-          slot.hp = Math.max(slot.hp + OVERHEAT_DAMAGE, 0);
+          slot.hp = Math.max(slot.hp + D * OVERHEAT_DAMAGE, 0);
+          slot.damage_at = glov_engine.getFrameTimestamp();
           if (!slot.hp) {
             log(slot.type.toUpperCase() + ' destroyed by HEAT');
             continue;
           }
-          slot.heat_damage++;
-          if (slot.heat_damage === OVERHEAT_TICKS) {
+          slot.heat_damage += dt;
+          if (slot.heat_damage >= AUTOCOOL_TIME) {
             slot.power = 0;
             slot.autocool = true;
           }
@@ -567,13 +579,13 @@ export function main(canvas)
       }
       switch (slot.type) {
         case 'shield':
-          slot.shield = Math.min(Math.max(slot.shield + SHIELD_DELTA[slot.power], 0), value_defs.shield.max);
+          slot.shield = Math.min(Math.max(slot.shield + D * SHIELD_DELTA[slot.power], 0), value_defs.shield.max);
           break;
         case 'engine':
-          slot.evade = Math.min(Math.max(slot.evade + EVADE_DELTA[slot.power] * (state.engine_factor || 1), 0), value_defs.evade.max);
+          slot.evade = Math.min(Math.max(slot.evade + D * EVADE_DELTA[slot.power] * (state.engine_factor || 1), 0), value_defs.evade.max);
           break;
         case 'life':
-          slot.o2 = Math.min(Math.max(slot.o2 + O2PROD_DELTA[slot.power], 0), value_defs.o2.max);
+          slot.o2 = Math.min(Math.max(slot.o2 + D * O2PROD_DELTA[slot.power], 0), value_defs.o2.max);
           break;
         case 'repair':
           if (slot.power && slot.hp) {
@@ -590,12 +602,18 @@ export function main(canvas)
           }
           break;
         case 'gen':
-          slot.gen = Math.min(Math.max(slot.gen + GEN_DELTA[slot.power], 0), value_defs.gen.max);
+          slot.gen = Math.min(Math.max(slot.gen + D * GEN_DELTA[slot.power], 0), value_defs.gen.max);
           break;
 
         case 'weapon':
-          slot.fire_at = null;
-          if (slot.charge === value_defs.charge.max) {
+          if (slot.firing) {
+            slot.firing -= dt;
+            if (slot.firing <= 0) {
+              slot.firing = 0;
+              slot.fire_at = null;
+            }
+          }
+          if (slot.charge >= value_defs.charge.max) {
             // fire at enemy!
             slot.charge = 0;
             let targets = state.wave.ships.filter(hasHP);
@@ -603,9 +621,10 @@ export function main(canvas)
               let ship = targets[Math.floor(Math.random() * targets.length)];
               ship.hp = 0;
               slot.fire_at = [ship.x, ship.y];
+              slot.firing = FIRE_DURATION;
             }
           } else {
-            slot.charge = Math.min(Math.max(slot.charge + CHARGE_DELTA[slot.power], 0), value_defs.charge.max);
+            slot.charge = Math.min(Math.max(slot.charge + D * CHARGE_DELTA[slot.power], 0), value_defs.charge.max);
           }
           break;
       }
@@ -652,8 +671,8 @@ export function main(canvas)
 
     const O2_CONSUMPTION = 2;
     const O2_PROD_FACTOR = O2_CONSUMPTION * 4 / 100;
-    state.o2 = (state.o2 - O2_CONSUMPTION) + ship_stats.o2 * O2_PROD_FACTOR;
-    state.o2 = Math.max(Math.min(state.o2, 100), 0);
+    state.o2 = (state.o2 - D * O2_CONSUMPTION) + ship_stats.o2 * D * O2_PROD_FACTOR;
+    state.o2 = Math.min(state.o2, 100);
     if (tutorial.o2 && state.o2 < 5) {
       tutorial.o2 = false;
       glov_ui.modalDialog({
@@ -665,7 +684,8 @@ export function main(canvas)
         },
       });
     }
-    if (state.o2 === 0) {
+    if (state.o2 < -O2_CONSUMPTION) {
+      state.o2 = 0;
       // pick a random slot, kill a passenger
       let targets = state.slots.filter(hasHP);
       if (targets.length) {
@@ -682,12 +702,19 @@ export function main(canvas)
     let evade = (ship_stats.evade || 0) / 100;
     for (let ii = 0; ii < state.wave.ships.length; ++ii) {
       let ship = state.wave.ships[ii];
-      ship.fire_at = null;
       if (!ship.hp) {
         continue;
       }
-      if (ship.fire_countdown) {
-        --ship.fire_countdown;
+      if (ship.firing) {
+        ship.firing -= dt;
+        if (ship.firing <= 0) {
+          ship.firing = 0;
+          ship.fire_at = null;
+        }
+        continue;
+      }
+      if (ship.fire_countdown > 0) {
+        ship.fire_countdown -= dt;
         continue;
       }
       if (tutorial.shield === 1) {
@@ -779,20 +806,24 @@ export function main(canvas)
               if (damage >= slot.hp) {
                 log(slot.type.toUpperCase() + ' destroyed by ENEMY');
                 slot.hp = 0;
+                slot.damage_at = glov_engine.getFrameTimestamp();
               } else {
                 slot.hp -= damage;
+                slot.damage_at = glov_engine.getFrameTimestamp();
               }
             }
           } else if (damage >= slot.hp) {
             log(slot.type.toUpperCase() + ' destroyed by ENEMY');
             slot.hp = 0;
+            slot.damage_at = glov_engine.getFrameTimestamp();
           } else {
             slot.hp -= damage;
+            slot.damage_at = glov_engine.getFrameTimestamp();
           }
         }
       }
-
-      ship.fire_countdown = 2 + Math.floor(Math.random() * 2);
+      ship.firing = ENEMY_FIRE_DURATION;
+      ship.fire_countdown = (2 + Math.random() * 2) * TICK;
     }
   }
 
@@ -801,8 +832,8 @@ export function main(canvas)
       glov_ui.drawLine(
         x0,
         y0 + (Math.random() * 4 - 2) * scale,
-        x1 + (Math.random() * (is_vert ? 8 : 16) * scale - 4) * scale,
-        y1 + (Math.random() * (is_vert ? 16 : 8) * scale - 4) * scale,
+        x1 + (Math.random() * (is_vert ? 8 : 16) - 4) * scale,
+        y1 + (Math.random() * (is_vert ? 16 : 8) - 4) * scale,
         Z.ENEMY + 1, 2 * scale, 0.95, pico8_colors[8 + Math.floor(Math.random() * 2) + (is_player ? 3 : 0)]
       );
     }
@@ -951,6 +982,17 @@ export function main(canvas)
             let bar_w = (vert ? 31 : 36) * v / max;
             let bar_h = 7;
             let color = colorFromTypeAndValue(slot, value_type, v / max);
+            const FLASH_TIME = 100;
+            if (value_type === 'hp' && slot.damage_at) {
+              let dt = glov_engine.getFrameTimestamp() - slot.damage_at;
+              if (dt < FLASH_TIME) {
+                color = pico8_colors[8];
+              } else if (dt < FLASH_TIME * 2) {
+                color = pico8_colors[10];
+              } else if (dt < FLASH_TIME * 3) {
+                color = pico8_colors[8];
+              }
+            }
             if (bar_w) {
               if (vert) {
                 glov_ui.drawRect(bar_x, bar_y, bar_x + bar_h, bar_y - bar_w, Z.SHIP + 3, color);
@@ -1025,10 +1067,10 @@ export function main(canvas)
       font.drawSized(style_summary, x, y, z_text, size, `${stats.power} / ${stats.gen} PWR`);
       drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, stats.power / stats.gen, 1, colorIndex(Math.max(0, 3 - (stats.gen - stats.power))));
       y += y_adv;
-      font.drawSized(style_summary, x, y, z_text, size, `${state.o2.toFixed(0)}% O2 SUPPLY`);
-      drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, state.o2 / 100, (state.o2 >= 4 * 6) ? 1 : colorIndex(4 - Math.min(4, Math.floor(state.o2 / 6))), 11);
+      font.drawSized(style_summary, x, y, z_text, size, `${Math.max(0, state.o2).toFixed(0)}% O2 SUPPLY`);
+      drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, Math.max(0, state.o2) / 100, (state.o2 >= 4 * 6) ? 1 : colorIndex(4 - Math.min(4, Math.floor(Math.max(0, state.o2) / 6))), 11);
       y += y_adv;
-      font.drawSized(style_summary, x, y, z_text, size, `${stats.shield || 0} Shield`);
+      font.drawSized(style_summary, x, y, z_text, size, `${(stats.shield || 0).toFixed(0)} Shield`);
       drawBar(bar_x, y + bar_y_offs, bar_w, bar_h, stats.shield / (state.wave.num_ships * state.wave.damage * 2),
         stats.shield <= state.wave.damage ? 8 : 1, 12);
       y += y_adv;
@@ -1111,12 +1153,7 @@ export function main(canvas)
         triggerWin();
       }
     }
-    if (dt >= state.tick_countdown) {
-      doTick();
-      state.tick_countdown = Math.max(TICK_EACH / 2, TICK_EACH - (dt - state.tick_countdown));
-    } else {
-      state.tick_countdown -= dt;
-    }
+    doTick(dt);
 
     drawShipBG(dt);
     drawSlots(dt);
@@ -1707,7 +1744,8 @@ export function main(canvas)
         x: ENEMY_SHIP_X0 + Math.random() * 10,
         y: ENEMY_SHIP_H + Math.random() * (game_height - ENEMY_SHIP_H * 2),
         hp: max_hp,
-        fire_countdown: ENEMY_INITIAL_COUNTDOWN + Math.floor(Math.random() * 3), // in ticks
+        fire_countdown: ENEMY_INITIAL_COUNTDOWN + Math.random() * 3 * TICK,
+        firing: 0,
       };
       state.wave.ships.push(ship);
     }
@@ -1716,7 +1754,6 @@ export function main(canvas)
   function initState() {
     state = {
       deaths: 0,
-      tick_countdown: TICK_FIRST,
       slots: [],
       messages: [],
       on_priority: [],
@@ -1835,7 +1872,7 @@ export function main(canvas)
       initState();
       if (DEBUG) {
         tutorial = {};
-        state.chapter = 3;
+        state.chapter = 4;
       }
       app.game_state = DEBUG ? encounterInit : introInit;
     }
