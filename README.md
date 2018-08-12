@@ -3,8 +3,6 @@ Ludum Dare 42 - Running Out of Space
 
 TODO:
   Gameplay
-    High scores
-
     Pause?
     After polish, tweak waves[]
     Should destroyed slots become cargo holds automatically?  Or slightly repaired?

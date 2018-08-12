@@ -9,7 +9,7 @@ const local_storage = require('./local_storage.js');
 const particle_data = require('./particle_data.js');
 const lodash = require('lodash');
 
-local_storage.storage_prefix = 'turbulenz-playground';
+local_storage.storage_prefix = 'turbulenz-LD42';
 window.Z = window.Z || {};
 Z.BACKGROUND = 0;
 Z.SHIP = 5;
@@ -85,6 +85,7 @@ export function main(canvas)
   const glov_engine = require('./glov/engine.js');
   const glov_font = require('./glov/font.js');
   const util = require('./glov/util.js');
+  const score_system = require('./score.js');
 
   glov_engine.startup({
     canvas,
@@ -119,6 +120,25 @@ export function main(canvas)
     button_click: 'button_click',
     rollover: 'rollover',
   });
+
+  // higher score is "better"
+  const score_mod1 = 10000;
+  const score_mod2 = 10000;
+  const deaths_inv = 9999;
+  function scoreToValue(score) {
+    return score.level * score_mod1 * score_mod2 + score.cargo * score_mod1 + (deaths_inv - score.deaths);
+  }
+  function valueToScore(score) {
+    let deaths = deaths_inv - score % score_mod1;
+    score = Math.floor(score / score_mod1);
+    let cargo = score % score_mod2;
+    score = Math.floor(score / score_mod2);
+    let level = score;
+    return { level, cargo, deaths };
+  }
+  score_system.init(scoreToValue, valueToScore, { all: { name: 'all' }}, 'LD42');
+  score_system.getScore('all');
+
 
   const pico8_colors = [
     math_device.v4Build(0, 0, 0, 1),
@@ -427,7 +447,7 @@ export function main(canvas)
   let style_summary = glov_font.style(null, {
     color: 0x000000ff,
     // outline_width: 1.5,
-    // outline_color: 0xFFFFFFff,
+    // outline_color: 0xFFF1E8ff,
     // glow_xoffs: 3.25,
     // glow_yoffs: 3.25,
     // glow_inner: -2.5,
@@ -1279,6 +1299,13 @@ export function main(canvas)
       w: w,
       h: h,
     });
+
+    if (glov_ui.buttonText({ x: 8, y: game_height - 16 - 8,
+      text: 'High Scores'}))
+    {
+      app.game_state = scoresInit;
+    }
+
   }
 
   function win(dt) {
@@ -1287,7 +1314,7 @@ export function main(canvas)
     let x0 = game_width / 6;
     let w = game_width / 1.5;
     let y0 = game_height / 10;
-    let h = 136;
+    let h = 156;
     let x = x0;
     let y = y0;
     let size = glov_ui.font_height;
@@ -1322,6 +1349,14 @@ export function main(canvas)
 
     if (glov_ui.buttonText({ x: game_width / 2 - button_w/2, y,
       w: button_w,
+      text: 'View High Scores'}))
+    {
+      app.game_state = scoresInit;
+    }
+    y += 20;
+
+    if (glov_ui.buttonText({ x: game_width / 2 - button_w/2, y,
+      w: button_w,
       text: 'Check out Splody on Steam and PS4!'}))
     {
       window.location = 'http://www.splody.com';
@@ -1350,7 +1385,7 @@ export function main(canvas)
     let x0 = game_width / 6;
     let w = game_width / 1.5;
     let y0 = game_height / 6;
-    let h = 110;
+    let h = 130;
     let x = x0;
     let y = y0;
     let size = glov_ui.font_height;
@@ -1374,6 +1409,14 @@ export function main(canvas)
 
     if (glov_ui.buttonText({ x: game_width / 2 - button_w/2, y,
       w: button_w,
+      text: 'View High Scores'}))
+    {
+      app.game_state = scoresInit;
+    }
+    y += 20;
+
+    if (glov_ui.buttonText({ x: game_width / 2 - button_w/2, y,
+      w: button_w,
       text: 'Replay'}))
     {
       window.location.reload();
@@ -1386,6 +1429,96 @@ export function main(canvas)
       w: w,
       h: h,
     });
+  }
+
+  let scores_edit_box;
+  function scores(dt) {
+    /* jshint bitwise:false */
+    if (!have_scores) {
+      return;
+    }
+    let x = game_width / 4;
+    let y = 8;
+    let size = 8;
+    let width = game_width / 2;
+    font.drawSizedAligned(null, x, y, Z.UI, size * 2, glov_font.ALIGN.HCENTERFIT, width, 0, 'HIGH SCORES');
+    y += size * 2 + 2;
+    let scores = score_system.high_scores.all;
+    let widths = [8, 40, 15, 24, 20];
+    let widths_total = 0;
+    for (let ii = 0; ii < widths.length; ++ii) {
+      widths_total += widths[ii];
+    }
+    let set_pad = 4;
+    for (let ii = 0; ii < widths.length; ++ii) {
+      widths[ii] *= (width - set_pad * (widths.length - 1)) / widths_total;
+    }
+    let align = [
+      glov_font.ALIGN.HFIT | glov_font.ALIGN.HRIGHT,
+      glov_font.ALIGN.HFIT,
+      glov_font.ALIGN.HFIT | glov_font.ALIGN.HCENTER,
+      glov_font.ALIGN.HFIT | glov_font.ALIGN.HCENTER,
+      glov_font.ALIGN.HFIT | glov_font.ALIGN.HCENTER,
+    ];
+    function drawSet(arr, style) {
+      let xx = x;
+      for (let ii = 0; ii < arr.length; ++ii) {
+        font.drawSizedAligned(style, xx, y, Z.UI, size, align[ii], widths[ii], 0, '' + arr[ii]);
+        xx += widths[ii] + set_pad;
+      }
+      y += size;
+    }
+    drawSet(['', 'Name', 'Chapter', 'Passengers', 'Deaths'], glov_font.styleColored(null, 0xC2C3C7ff));
+    y += 4;
+    let score_style = glov_font.styleColored(null, 0xFFF1E8ff);
+    let found_me = false;
+    for (let ii = 0; ii < scores.length; ++ii) {
+      let s = scores[ii];
+      let style = score_style;
+      let drawme = false;
+      if (s.name === score_system.player_name) {
+        style = glov_font.styleColored(null, 0x00E436ff);
+        found_me = true;
+        drawme = true;
+      }
+      if (ii < 15 || drawme) {
+        drawSet([`#${ii+1}`, score_system.formatName(s), s.score.level, s.score.cargo, s.score.deaths], style);
+      }
+    }
+    y += 4;
+    if (found_me && score_system.player_name.indexOf('Anonymous') === 0) {
+      if (!scores_edit_box) {
+        scores_edit_box = glov_ui.createEditBox({
+          x: 100,
+          y: game_height - 16,
+          w: 100,
+        });
+        scores_edit_box.setText(score_system.player_name);
+      }
+
+      if (scores_edit_box.run({
+        x,
+        y,
+      }) === scores_edit_box.SUBMIT || glov_ui.buttonText({
+        x: x + scores_edit_box.w + size,
+        y,
+        w: size * 9,
+        h: glov_ui.button_height / 2,
+        font_height: glov_ui.font_height * 0.75,
+        text: 'Update Player Name'
+      })) {
+        // scores_edit_box.text
+        if (scores_edit_box.text) {
+          score_system.updatePlayerName(scores_edit_box.text);
+        }
+      }
+    }
+
+    if (glov_ui.buttonText({ x: 8, y: game_height - 16 - 8,
+      text: 'Restart'}))
+    {
+      window.location.reload();
+    }
   }
 
   function special(dt) {
@@ -1638,7 +1771,11 @@ export function main(canvas)
     manage(dt);
   }
 
+  let have_scores = false;
   function specialInit(dt) {
+    score_system.setScore('all', { level: state.chapter, cargo: calcShipStats().cargo, deaths: state.deaths }, function () {
+      have_scores = true;
+    });
     app.game_state = special;
     time_in_state = 0;
     ship_x_prev = SHIP_X;
@@ -1647,6 +1784,9 @@ export function main(canvas)
   }
 
   function introInit(dt) {
+    score_system.updateHighScores(function () {
+      have_scores = true;
+    });
     app.game_state = intro;
     time_in_state = 0;
     ship_x_prev = game_width;
@@ -1670,6 +1810,14 @@ export function main(canvas)
     lose(dt);
   }
 
+  function scoresInit(dt) {
+    score_system.updateHighScores(function () {
+      have_scores = true;
+    });
+    app.game_state = scores;
+    scores(dt);
+  }
+
   function loading() {
     let load_count = glov_sprite.loading() + sound_manager.loading();
     $('#loading').text(`Loading (${load_count})...`);
@@ -1678,9 +1826,9 @@ export function main(canvas)
       initState();
       if (DEBUG) {
         tutorial = {};
-        state.chapter = 5;
+        //state.chapter = 1;
       }
-      app.game_state = DEBUG ? encounterInit : introInit;
+      app.game_state = DEBUG ? introInit : introInit;
     }
   }
 
