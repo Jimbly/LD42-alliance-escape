@@ -8,7 +8,6 @@ TODO:
     Some way to over-power nodes again?
   Visuals
     Draw passengers moving / dying
-    Background - space / X planets / ports
     Better destroyed panels
     Different light and heavy fighters
   Sounds

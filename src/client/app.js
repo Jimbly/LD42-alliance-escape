@@ -11,7 +11,8 @@ const lodash = require('lodash');
 
 local_storage.storage_prefix = 'turbulenz-LD42';
 window.Z = window.Z || {};
-Z.BACKGROUND = 0;
+Z.SPACE = 0;
+Z.BACKGROUND = 1;
 Z.PLANET = 10;
 Z.SHIP = 20;
 Z.ENEMY = 30;
@@ -323,6 +324,7 @@ export function main(canvas)
     sprites.engine = loadSprite('engine.png', 24, 20, origin_0_0);
 
     sprites.toggles = loadSprite('toggles.png', [32, 32], [32, 32, 32, 32], origin_0_0);
+    sprites.space = loadSprite('space.png', [13, 13, 13], [13, 13, 13, 13]);
 
     sprites.panel_bgs = {};
     sprites.panel_help = {};
@@ -1144,6 +1146,25 @@ export function main(canvas)
     });
   }
 
+  let space_particles = [];
+  let num_particles = 40;
+  let max_part_frame = 12;
+  function genPart() {
+    return {
+      x: -64,
+      y: Math.random() * (game_height + 64 * 2) - 64,
+      z: Z.SPACE,
+      size: [13, 13],
+      dx: 0.1 + Math.random() * 0.1,
+      frame: Math.floor(Math.random() * max_part_frame),
+    };
+  }
+  for (let ii = 0; ii < num_particles; ++ii) {
+    let part = genPart();
+    part.x = Math.random() * game_width;
+    space_particles.push(part);
+  }
+
   let planet_index = 0;
   let planet_y = 0; // 0 - 1
   let planet_cur_y = 0;
@@ -1180,6 +1201,15 @@ export function main(canvas)
         x: 0, y: game_height - planet_cur_y * game_width / 2, z: Z.PLANET,
         size: [game_width, game_width / 2],
       });
+    }
+
+    for (let ii = 0; ii < space_particles.length; ++ii) {
+      let part = space_particles[ii];
+      part.x += part.dx * dt;
+      sprites.space.draw(part);
+      if (part.x > game_width + 64) {
+        space_particles[ii] = genPart();
+      }
     }
   }
 
