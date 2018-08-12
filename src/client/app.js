@@ -12,9 +12,10 @@ const lodash = require('lodash');
 local_storage.storage_prefix = 'turbulenz-LD42';
 window.Z = window.Z || {};
 Z.BACKGROUND = 0;
-Z.SHIP = 5;
-Z.ENEMY = 10;
-Z.PARTICLES = 20;
+Z.PLANET = 10;
+Z.SHIP = 20;
+Z.ENEMY = 30;
+Z.PARTICLES = 40;
 Z.BORDERS = 1000;
 
 const DEBUG = window.location.toString().indexOf('localhost') !== -1;
@@ -45,6 +46,7 @@ const SHIP_H = 288;
 const PANEL_W = 64;
 const PANEL_H = 32;
 const SHIP_TRANSITION_TIME = 1000;
+const PLANET_TRANSITION_TIME = 2000;
 const SHIP_X_ENCOUNTER = 18;
 const SHIP_X_MANAGE = (game_width - SHIP_W) + 18;
 const SHIP_X_INTRO = (game_width - SHIP_W) / 3;
@@ -342,6 +344,13 @@ export function main(canvas)
     sprites.gun_top = loadSprite('gun-top.png', 32, 13, origin_0_0);
     sprites.gun_bot = loadSprite('gun-bot.png', 32, 13, origin_0_0);
 
+    sprites.bg = loadSprite('bg.png', 128, 256, origin_0_0);
+
+    sprites.planets = [];
+    for (let ii = 1; ii <= 4; ++ii) {
+      sprites.planets[ii] = loadSprite(`planet-${ii}.png`, 128, 64, origin_0_0);
+    }
+
     // sprites.test_animated = loadSprite('test_sprite.png', [13, 13], [13, 13]);
     // sprites.animation = createAnimation({
     //   idle: {
@@ -351,11 +360,6 @@ export function main(canvas)
     // });
     // sprites.animation.setState('idle');
 
-    sprites.game_bg = loadSprite('white', 1, 1, {
-      width : game_width,
-      height : game_height,
-      origin: [0, 0],
-    });
   }
 
   function doBlurEffect(src, dest) {
@@ -1140,7 +1144,14 @@ export function main(canvas)
     });
   }
 
+  let planet_index = 0;
+  let planet_y = 0; // 0 - 1
+  let planet_cur_y = 0;
+  let planet_last_y;
   function drawShipBG(dt) {
+    if (time_in_state === 0) {
+      planet_last_y = planet_cur_y;
+    }
     time_in_state += dt;
     if (time_in_state >= SHIP_TRANSITION_TIME) {
       SHIP_X = ship_x_desired;
@@ -1148,12 +1159,28 @@ export function main(canvas)
       SHIP_X = util.lerp(util.easeInOut(time_in_state / SHIP_TRANSITION_TIME, 2),
         ship_x_prev, ship_x_desired);
     }
-    draw_list.queue(sprites.game_bg, 0, 0, Z.BACKGROUND, pico8_colors[2]);
     sprites.ship.draw({
       x: SHIP_X, y: SHIP_Y, z: Z.SHIP,
       size: [SHIP_W, SHIP_H],
       frame: 0,
     });
+
+    if (planet_cur_y !== planet_y) {
+      planet_cur_y = util.lerp(util.easeInOut(Math.min(1, time_in_state / PLANET_TRANSITION_TIME), 2),
+        planet_last_y, planet_y);
+      planet_cur_y = util.clamp(planet_cur_y, 0, 1);
+    }
+
+    sprites.bg.draw({
+      x: 0, y: 100 - planet_cur_y * (game_width * 2 - game_height + 100), z: Z.BACKGROUND,
+      size: [game_width, game_width * 2],
+    });
+    if (planet_index) {
+      sprites.planets[planet_index].draw({
+        x: 0, y: game_height - planet_cur_y * game_width / 2, z: Z.PLANET,
+        size: [game_width, game_width / 2],
+      });
+    }
   }
 
   function encounter(dt) {
@@ -1603,25 +1630,30 @@ export function main(canvas)
         ' Alliance control, and take as many refugees with' +
         ' you as you can. Your ship is just about out of space though...';
       button = 'Back to port to pick up refugees';
+      planet_index = 1;
     } else if (state.chapter === 2) {
       text = 'That last bunch of passengers was an odd group, like an old joke,' +
         ' "A rabbi, a cop, and a doctor walk into a bar...", but at least the' +
         ' skilled doctor can fix up your crew\'s injuries.\n\nHer younger brother is weird though,' +
         ' just stares at you blankly and says things like "Ben, good... in the Latin".';
+      planet_index = 1;
     } else if (state.chapter === 3) {
       text = 'As you approach Planet Utopius, you are hailed by a group of 40 Etherians, a rare race of energy beings.' +
         '\n\nBeing somewhat incorporeal, they can all fit into a single cargo hold, but require energy hook-ups that can' +
         ' only be found if you remove one of your shields.';
       button = 'In to port...';
+      planet_index = 4;
     } else if (state.chapter === 4) {
       text = 'Port Griffin is eerily empty, you see no one anywhere...';
       button = 'Let\'s not dally long...';
+      planet_index = 1;
     } else if (state.chapter === 5) {
       // marked as state.picked_up[6]
       text = 'For some reason this *entire planet* is a desert. Weird. Luckily its full of' +
         ' rather resourceful people, so if you make room in your ship for more refugees' +
         ' some of them promise to tinker with your engines a bit.';
       button = 'This can\'t possibly go wrong';
+      planet_index = 3;
     } else if (state.chapter === 6) {
       let shields = state.slots.filter(function(slot) {
         return slot.type === 'shield' && slot.hp;
@@ -1640,6 +1672,7 @@ export function main(canvas)
       } else {
         text = 'A shiver runs down your spine.';
       }
+      planet_index = 4;
     } else if (state.chapter === 7) {
       let engines = state.slots.filter(function (slot) {
         return slot.type === 'engine';
@@ -1654,23 +1687,28 @@ export function main(canvas)
         text = 'Another desert planet.  Who settles on these?';
         button = 'Not me.';
       }
+      planet_index = 3;
     } else if (state.chapter === 8) {
       text = 'You\'re far enough away now that only the smaller, lighter Alliance fighters' +
         ' seem to be able to catch up to you.';
       button = 'Thank God.';
+      planet_index = 1;
     } else if (state.chapter === 9) {
       text = 'As you start to land on this world which is seemingly entirely one giant jungle,' +
         ' some refugees from the desert world start going on about how implausible it is that' +
         ' an entire world would be just one biome.';
       button = 'Like they can talk...';
+      planet_index = 2;
     } else if (state.chapter === 10) {
       text = 'You\'re getting really far away from The Alliance, they\'ve all but' +
         ' given up chasing you, it seems. Sensors show only one squadron still chasing you.';
+      planet_index = 1;
     } else if (state.chapter === 11) {
       text = 'Beyond the rim. You made it.' +
         '\n\nThere\'s no sign of The Alliance anywhere.'+
         '\n\nYou think it\'s time to find a new home.';
       button = 'FTW';
+      planet_index = 2;
     }
     y += font.drawSizedWrapped(style_summary, x + 8, y, Z.UI + 1,
       w - 16, 0, size,
@@ -1798,6 +1836,7 @@ export function main(canvas)
     app.game_state = encounter;
     time_in_state = 0;
     state.o2 = 80;
+    planet_y = 0;
     ship_x_prev = SHIP_X;
     ship_x_desired = SHIP_X_ENCOUNTER;
     encounter(dt);
@@ -1807,6 +1846,7 @@ export function main(canvas)
     app.game_state = manage;
     state.chapter++;
     time_in_state = 0;
+    planet_y = 1;
     ship_x_prev = SHIP_X;
     ship_x_desired = SHIP_X_MANAGE;
     state.recent_pickup = 0;
@@ -1839,6 +1879,7 @@ export function main(canvas)
     });
     app.game_state = special;
     time_in_state = 0;
+    planet_y = 1;
     ship_x_prev = SHIP_X;
     ship_x_desired = SHIP_X_SPECIAL;
     special(dt);
@@ -1850,6 +1891,8 @@ export function main(canvas)
     });
     app.game_state = intro;
     time_in_state = 0;
+    planet_y = 0;
+    planet_index = 1;
     ship_x_prev = game_width;
     ship_x_desired = SHIP_X_INTRO;
     intro(dt);
@@ -1858,6 +1901,7 @@ export function main(canvas)
   function winInit(dt) {
     app.game_state = win;
     time_in_state = 0;
+    planet_y = 0;
     ship_x_prev = SHIP_X;
     ship_x_desired = SHIP_X_WIN;
     win(dt);
@@ -1866,6 +1910,7 @@ export function main(canvas)
   function loseInit(dt) {
     app.game_state = lose;
     time_in_state = 0;
+    planet_y = 0;
     ship_x_prev = SHIP_X;
     ship_x_desired = SHIP_X_LOSE;
     lose(dt);
@@ -1887,9 +1932,10 @@ export function main(canvas)
       initState();
       if (DEBUG) {
         tutorial = {};
-        state.chapter = 3;
+        //state.chapter = 3;
+        //planet_index = 1;
       }
-      app.game_state = DEBUG ? encounterInit : introInit;
+      app.game_state = DEBUG ? introInit : introInit;
     }
   }
 
@@ -1910,10 +1956,11 @@ export function main(canvas)
       glov_engine.queueFrameEffect(Z.MODAL - 1, doDesaturateEffect);
     }
     // Borders
-    glov_ui.drawRect(glov_camera.x0(), glov_camera.y0(), glov_camera.x1(), 0, Z.BORDERS, pico8_colors[1]);
-    glov_ui.drawRect(glov_camera.x0(), game_height, glov_camera.x1(), glov_camera.y1(), Z.BORDERS, pico8_colors[1]);
-    glov_ui.drawRect(glov_camera.x0(), 0, 0, game_height, Z.BORDERS, pico8_colors[1]);
-    glov_ui.drawRect(game_width, 0, glov_camera.x1(), game_height, Z.BORDERS, pico8_colors[1]);
+    let border_color = 0;
+    glov_ui.drawRect(glov_camera.x0(), glov_camera.y0(), glov_camera.x1(), 0, Z.BORDERS, pico8_colors[border_color]);
+    glov_ui.drawRect(glov_camera.x0(), game_height, glov_camera.x1(), glov_camera.y1(), Z.BORDERS, pico8_colors[border_color]);
+    glov_ui.drawRect(glov_camera.x0(), 0, 0, game_height, Z.BORDERS, pico8_colors[border_color]);
+    glov_ui.drawRect(game_width, 0, glov_camera.x1(), game_height, Z.BORDERS, pico8_colors[border_color]);
 
     app.game_state(dt);
   }
