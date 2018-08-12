@@ -2,10 +2,9 @@ Ludum Dare 42 - Running Out of Space
 ============================
 
 * Intro
-* Load last piece of equipment
 * Tutorial Encounter Phase
 * The Choice
-* Manage Phase: Settle / Load / Continue
+* Manage Phase: Load / Continue
 * Encounter Phase
 * Special Event Phase
 * Repeat to Manage Phase
@@ -33,3 +32,4 @@ TODO:
   Enemies keep moving around
   Track total deaths
   Borders
+  Should destroyed slots become cargo holds automatically?  Or slightly repaired?

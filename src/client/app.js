@@ -23,6 +23,7 @@ let app = exports;
 export const game_width = 384;
 export const game_height = 288;
 
+var tutorial = { shield: 1, overheat: true, o2: true };
 const chapters = [
   null,
   { no_passengers : true, special: true },
@@ -45,7 +46,7 @@ let ship_x_desired = SHIP_X_ENCOUNTER;
 let SHIP_X = SHIP_X_ENCOUNTER;
 let time_in_state = 0;
 const SHIP_Y = 0;
-const TICK_FIRST = DEBUG ? 5000 : 5000;
+const TICK_FIRST = DEBUG ? 1000 : 1000;
 const TICK_EACH = DEBUG ? 1000 : 1000;
 const MAX_POWER = 2;
 
@@ -53,7 +54,7 @@ const ENEMY_SHIP_X0 = game_width + 64;
 const ENEMY_SHIP_X1 = SHIP_X + SHIP_W + (game_width - SHIP_W - SHIP_X) / 2;
 const ENEMY_SHIP_H = 64;
 const ENEMY_SHIP_SPEED = 40 / 1000; // pixels / ms
-const ENEMY_INITIAL_COUNTDOWN = DEBUG ? 0 : 5; // ticks
+const ENEMY_INITIAL_COUNTDOWN = DEBUG ? 0 : 7; // ticks
 const WIN_COUNTDOWN = DEBUG ? 1 : 5; // ticks
 
 const HEAT_DELTA = [-5, 5, 20];
@@ -180,29 +181,29 @@ export function main(canvas)
   let panel_types = {
     engine: {
       values: ['heat', 'evade', 'hp'],
-      name: 'ENGINE',
+      name: 'an ENGINE',
     },
     shield: {
       values: ['heat', 'shield', 'hp'],
-      name: 'SHIELD GENERATOR',
+      name: 'a SHIELD GENERATOR',
     },
     weapon: {
       values: ['heat', 'charge', 'hp'],
-      name: 'WEAPON',
+      name: 'a WEAPON',
     },
     gen: {
       values: ['heat', 'gen', 'hp'],
       vert: true,
-      name: 'POWER GENERATOR',
+      name: 'a POWER GENERATOR',
     },
     repair: {
       values: [null, 'hp', null],
       vert: true,
-      name: 'REPAIR DRONE',
+      name: 'the REPAIR DRONE',
     },
     life: {
       values: ['heat', 'o2', 'hp'],
-      name: 'LIFE SUPPORT',
+      name: 'the LIFE SUPPORT',
     },
     cargo: {
       values: ['cargo'],
@@ -432,6 +433,9 @@ export function main(canvas)
   function hasHP(elem) {
     return elem.type === 'cargo' ? elem.cargo > 0 : elem.hp > 0;
   }
+  function isActiveShield(slot) {
+    return slot.hp && slot.type === 'shield' && slot.shield;
+  }
 
   function triggerWin() {
     log('Encounter won!');
@@ -445,6 +449,9 @@ export function main(canvas)
   }
 
   function doTick() {
+    if (glov_ui.modal_dialog) {
+      return;
+    }
     if (state.wave.won) {
       --state.wave.win_countdown;
       if (!state.wave.win_countdown) {
@@ -466,6 +473,22 @@ export function main(canvas)
       if (slot.heat !== undefined) {
         slot.heat += HEAT_DELTA[slot.power];
         slot.heat = Math.max(slot.heat, 0);
+        if (tutorial.overheat && slot.heat >= value_defs.heat.max * 0.9) {
+          tutorial.overheat = false;
+          glov_ui.modalDialog({
+            title: 'TUTORIAL',
+            text: 'When equipment is on, it generates heat. When its heat capacity' +
+              ' is full, it will take damage.\n\nRight now, ' +
+              panel_types[slot.type].name + ' is overheating! Quickly turn it off' +
+              ' to prevent further damage.' +
+              (slot.type === 'shield' ? '\n\nYou may then want to turn on your other ' +
+                'SHIELD GENERATOR so you are protected while this one cools down.' : '')
+              ,
+            buttons: {
+              'Okay': null,
+            },
+          });
+        }
         if (slot.heat > value_defs.heat.max) {
           let extra = slot.heat - value_defs.heat.max; // TODO: scale damage?
           slot.heat = value_defs.heat.max;
@@ -534,6 +557,19 @@ export function main(canvas)
 
     let ship_stats = calcShipStats();
 
+    if (state.chapter === 1) {
+      if (tutorial.weapon && ship_stats.charge > 20) {
+        tutorial.weapon = false;
+        glov_ui.modalDialog({
+          title: 'TUTORIAL',
+          text: 'Great! The WEAPON will fire, destroying one Alliance Fighter once its CHARGE is full.',
+          buttons: {
+            'Okay': null,
+          },
+        });
+      }
+    }
+
     while (ship_stats.power > ship_stats.gen) {
       let idx = state.on_priority.pop();
       let slot = state.slots[idx];
@@ -562,6 +598,17 @@ export function main(canvas)
     const O2_PROD_FACTOR = O2_CONSUMPTION * 4 / 100;
     state.o2 = (state.o2 - O2_CONSUMPTION) + ship_stats.o2 * O2_PROD_FACTOR;
     state.o2 = Math.max(Math.min(state.o2, 100), 0);
+    if (tutorial.o2 && state.o2 < 5) {
+      tutorial.o2 = false;
+      glov_ui.modalDialog({
+        title: 'TUTORIAL',
+        text: 'Your ship\'s oxygen supply is dangerously low!\n\nTurn ON your' +
+        ' LIFE SUPPORT to replenish it, or your passengers will start dying!',
+        buttons: {
+          'Okay': null,
+        },
+      });
+    }
     if (state.o2 === 0) {
       // pick a random slot, kill a passenger
       let targets = state.slots.filter(hasHP);
@@ -586,6 +633,32 @@ export function main(canvas)
         --ship.fire_countdown;
         continue;
       }
+      if (tutorial.shield === 1) {
+        tutorial.shield = 2;
+        glov_ui.modalDialog({
+          title: 'TUTORIAL',
+          text: 'The enemy is about to start firing. Raise your shields by clicking to turn ON one SHIELD GENERATOR.',
+          buttons: {
+            'Okay': null,
+          },
+        });
+      }
+      if (tutorial.shield === 2) {
+        // check if shields have been raised
+        if (ship_stats.shield > 20) {
+          glov_ui.modalDialog({
+            title: 'TUTORIAL',
+            text: 'Good! The Shield will prevent all damage, and the SHIELD GENERATOR will continue to replenish your Shield until it is turned off, or starts overheating.\n\n' +
+              'Next, you want to turn ON one WEAPON to start firing back',
+            buttons: {
+              'Okay': null,
+            },
+          });
+          tutorial.shield = false;
+          tutorial.weapon = true;
+        }
+        continue;
+      }
       // Fire!
       // check vs evade
       let damage = state.wave.damage;
@@ -597,15 +670,22 @@ export function main(canvas)
         ship.fire_at_vert = true;
       }
       // if any damage left and there's a shield generator, target it
-      for (let jj = 0; damage && jj < state.slots.length; ++jj) {
-        let slot = state.slots[jj];
+      let shields = state.slots.filter(isActiveShield);
+      for (let jj = 0; jj < shields.length - 1; ++jj) {
+        let idx = Math.floor(Math.random() * (shields.length - jj));
+        let temp = shields[idx];
+        shields[idx] = shields[jj];
+        shields[jj] = temp;
+      }
+      for (let jj = 0; damage && jj < shields.length; ++jj) {
+        let slot = shields[jj];
         if (!slot.hp || slot.type !== 'shield' || !slot.shield) {
           continue;
         }
         if (!ship.fire_at) {
           ship.fire_at = [
-            ship_slots[jj].pos[0] + (panel_types[slot.type].vert ? PANEL_H : PANEL_W) / 2,
-            ship_slots[jj].pos[1] + (panel_types[slot.type].vert ? PANEL_W : PANEL_H) / 2
+            ship_slots[slot.idx].pos[0] + (panel_types[slot.type].vert ? PANEL_H : PANEL_W) / 2,
+            ship_slots[slot.idx].pos[1] + (panel_types[slot.type].vert ? PANEL_W : PANEL_H) / 2
           ];
           ship.fire_at_vert = panel_types[slot.type].vert;
         }
@@ -982,7 +1062,7 @@ export function main(canvas)
     } else {
       if (state.recent_pickup) {
         text += `Seeing empty${state.chapter === 2 ? ' space in your cargo hold' : ', if slightly bunrt, seats'}, ${state.recent_pickup}` +
-          ` fearless refugee${state.recent_pickup === 1 ? '' : 's'} quickly scramble aboard filling your ${state.chapter === 2 ? 'empty cargo' : 'recently vacated'}` +
+          ` fearless refugee${state.recent_pickup === 1 ? '' : 's'} quickly scramble aboard filling your ${state.chapter === 2 ? 'empty' : 'recently vacated'}` +
           ' hold.\n\n';
       } else {
         text += 'Your passengers celebrate that every one of them survived the last leg of their harrowing journey.\n\n';
@@ -1027,7 +1107,7 @@ export function main(canvas)
           'Click equipment to remove');
       } else {
         glov_ui.print(style_summary, 6, game_height - 50, Z.UI + 1,
-          `Remove a ${panel_types[state.slots[state.remove_slot].type].name} and`);
+          `Remove ${panel_types[state.slots[state.remove_slot].type].name} and`);
         let saved = 20;
         if (state.slots[state.remove_slot].type === 'shield' && chapters[state.chapter].replace_shield_40) {
           saved = 40;
@@ -1094,7 +1174,7 @@ export function main(canvas)
     y += size * 2;
     y += font.drawSizedWrapped(style_summary, x + 8, y, Z.UI + 1,
       w - 16, 0, size,
-      'You are Captain Ben of the starship Lighting Bug.  The evil Alliance is' +
+      'You are Captain Ben of the starship Lighting Bug. The evil Alliance is' +
       ' cramping the style of independents like yourself so you finish gearing' +
       ' up your ship before heading into battle...');
     y += 8;
@@ -1134,21 +1214,22 @@ export function main(canvas)
     y += size * 2;
     let text = 'MISSING_TEXT';
     if (state.chapter === 1) {
-      text = 'Okay, well, that fight was not so bad.  However, ' +
+      text = 'Okay, well, that fight was not so bad. However,' +
         ' your sensors show The Alliance armada is way bigger than' +
         ' you thought.\n\n' +
-        'New plan: get out of Dodge, and take as many refugees with' +
-        ' you as you can.  Your ship is just about out of space though...';
+        'Perhaps it would be nobler to get to a planet beyond the rim, beyond' +
+        ' Alliance control, and take as many refugees with' +
+        ' you as you can. Your ship is just about out of space though...';
     } else if (state.chapter === 2) {
       text = 'That last bunch of passengers was an odd group, like an old joke,' +
         ' "A rabbi, a cop, and a doctor walk into a bar...", but at least the' +
-        ' skilled doctor can fix up your crew.  Her younger brother is weird though,' +
-        ' just stares at you and says things like "Ben, good... in the Latin".';
+        ' skilled doctor can fix up your crew. Her younger brother is weird though,' +
+        ' just stares at you blankly and says things like "Ben, good... in the Latin".';
     } else if (state.chapter === 3) {
       text = 'In port you are approached by a group of 40 Etherians, a rare race of energy beings.' +
-        '\n\nThey can all crowd into a single cargo hold, but require energy hook-ups that can' +
+        '\n\nBeing somewhat incorporeal, they can all fit into a single cargo hold, but require energy hook-ups that can' +
         ' only be found if you remove one of your shields.';
-      text += '\n\n(If you choose to jettison a shield on the next screen, you will gain 40 more passengers)';
+      text += '\n\n(If you choose to jettison a Shield in port, you will gain 20 bonus passengers)';
     }
     y += font.drawSizedWrapped(style_summary, x + 8, y, Z.UI + 1,
       w - 16, 0, size,
@@ -1158,9 +1239,30 @@ export function main(canvas)
     let button_w = 160;
     if (glov_ui.buttonText({ x: game_width / 2 - button_w/2, y,
       w: button_w,
-      text: 'Back to port...'}))
+      text: state.chapter === 1 ? 'Back to port to pick up refugees' : 'Dock at another port...'}))
     {
       app.game_state = manageInit;
+    }
+
+    if (state.chapter === 1) {
+      y += 14;
+      if (glov_ui.buttonText({ x: game_width / 2 - button_w/2, y,
+        w: button_w,
+        text: 'Charge the armada, go out in glory!'}))
+      {
+        glov_ui.modalDialog({
+          title: 'You can\'t take the sky from me!',
+          text: 'You fly straight towards the oncoming armada, your guns gloriously, if foolishly,' +
+            ' blazing. You die, knowing you will be remembered.\n\nNo one remembers you, all of your' +
+            ' comrades on the previously free planets are dead.\n\nIn an alternate universe,' +
+            ' however, you chose to go back to port and save who you can instead...',
+          buttons: {
+            'Port': function () {
+              app.game_state = manageInit;
+            }
+          },
+        });
+      }
     }
 
     glov_ui.panel({
@@ -1174,8 +1276,11 @@ export function main(canvas)
 
   function nextWave() {
     let num_ships = 2;
-    let max_hp = 4;
+    let max_hp = 1;
     let damage = 5;
+    if (state.chapter === 1) {
+      num_ships = 4;
+    }
     state.wave = {
       num_ships,
       max_hp,
@@ -1281,7 +1386,7 @@ export function main(canvas)
       if (DEBUG) {
         state.chapter = 1;
       }
-      app.game_state = DEBUG ? specialInit : introInit;
+      app.game_state = DEBUG ? encounterInit : introInit;
     }
   }
 
