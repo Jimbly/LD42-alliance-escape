@@ -750,7 +750,13 @@ export function main(canvas)
         // miss!
         log('Enemy misses!');
         damage = 0;
-        ship.fire_at = [SHIP_W, SHIP_H / 2];
+        if (ship.y < game_height / 3) {
+          ship.fire_at = [SHIP_W - 60, SHIP_H / 4];
+        } else if (ship.y < game_height * 2 / 3) {
+          ship.fire_at = [SHIP_W, SHIP_H / 2];
+        } else {
+          ship.fire_at = [SHIP_W - 60, SHIP_H * 3/ 4];
+        }
         ship.fire_at_vert = true;
       }
       // if any damage left and there's a shield generator, target it
@@ -832,8 +838,8 @@ export function main(canvas)
       glov_ui.drawLine(
         x0,
         y0 + (Math.random() * 4 - 2) * scale,
-        x1 + (Math.random() * (is_vert ? 8 : 16) - 4) * scale,
-        y1 + (Math.random() * (is_vert ? 16 : 8) - 4) * scale,
+        x1 + (Math.random() * (is_vert ? 4 : 8) - 2) * scale,
+        y1 + (Math.random() * (is_vert ? 8 : 4) - 2) * scale,
         Z.ENEMY + 1, 2 * scale, 0.95, pico8_colors[8 + Math.floor(Math.random() * 2) + (is_player ? 3 : 0)]
       );
     }
@@ -1018,6 +1024,7 @@ export function main(canvas)
   }
 
   function drawWave(dt) {
+    let ts = glov_engine.getFrameTimestamp();
     for (let ii = 0; ii < state.wave.ships.length; ++ii) {
       let ship = state.wave.ships[ii];
       if (!ship.hp) {
@@ -1027,14 +1034,15 @@ export function main(canvas)
       if (ship.x > ENEMY_SHIP_X1) {
         ship.x = Math.max(ship.x - dist, ENEMY_SHIP_X1);
       }
-      sprites.enemy_fighter.draw({
-        x: ship.x, y: ship.y, z: Z.ENEMY,
+      let x = ship.x + ship.magx * Math.cos(ts * ship.period + ship.offs);
+      let y = ship.y + ship.magy * Math.sin(ts * ship.period + ship.offs);
+      sprites.enemy_fighter.draw({ x, y, z: Z.ENEMY,
         size: [-ENEMY_SHIP_H * state.wave.scale, ENEMY_SHIP_H * state.wave.scale],
         frame: 0,
       });
 
       if (ship.fire_at) {
-        drawFire(false, ship.fire_at_vert, ship.x - ENEMY_SHIP_H * state.wave.scale / 2 + 2, ship.y,
+        drawFire(false, ship.fire_at_vert, x - ENEMY_SHIP_H * state.wave.scale / 2 + 2, y,
           SHIP_X + ship.fire_at[0], SHIP_Y + ship.fire_at[1], state.wave.scale);
       }
     }
@@ -1739,10 +1747,16 @@ export function main(canvas)
       ships: [],
     };
     state.messages = [];
+    let min_dist = (game_height - ENEMY_SHIP_H * 2) / (num_ships - 1);
+    let move_dist = Math.min(game_height / 4, min_dist / 2);
     for (let ii = 0; ii < num_ships; ++ii) {
       let ship = {
         x: ENEMY_SHIP_X0 + Math.random() * 10,
-        y: ENEMY_SHIP_H + Math.random() * (game_height - ENEMY_SHIP_H * 2),
+        y: ENEMY_SHIP_H + min_dist * ii + Math.random() * min_dist / 4,
+        magx: move_dist * (0.2 + Math.random() * 0.75),
+        magy: move_dist * (0.2 + Math.random() * 0.75),
+        period: 0.001 * (1 + Math.random() * 1),
+        offs: Math.random() * Math.PI * 2,
         hp: max_hp,
         fire_countdown: ENEMY_INITIAL_COUNTDOWN + Math.random() * 3 * TICK,
         firing: 0,
@@ -1872,7 +1886,7 @@ export function main(canvas)
       initState();
       if (DEBUG) {
         tutorial = {};
-        state.chapter = 4;
+        state.chapter = 3;
       }
       app.game_state = DEBUG ? encounterInit : introInit;
     }
