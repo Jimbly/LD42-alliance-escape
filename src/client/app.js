@@ -296,6 +296,8 @@ export function main(canvas)
 
     sprites.white = loadSprite('white', 1, 1, origin_0_0);
 
+    sprites.engine = loadSprite('engine.png', 24, 20, origin_0_0);
+
     sprites.toggles = loadSprite('toggles.png', [32, 32], [32, 32, 32, 32], origin_0_0);
 
     sprites.panel_bgs = {};
@@ -804,6 +806,12 @@ export function main(canvas)
           sprites[pos[1] < SHIP_H / 2 ? 'gun_top' : 'gun_bot'].draw({
             x: x - 31, y: y + 9, z: Z.SHIP + 1.5,
             size: [32, 13],
+            frame: 0,
+          });
+        } else if (slot.type === 'engine') {
+          sprites.engine.draw({
+            x: x + 63, y: y + 6, z: Z.SHIP + 1.5,
+            size: [24, 20],
             frame: 0,
           });
         }
