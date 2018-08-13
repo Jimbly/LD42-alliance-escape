@@ -74,6 +74,7 @@ class GlovDrawList {
   // Identical to queue, but uses integer screen coordinates, for use with
   // nearest-filtered sprites so they do not shimmer as they move by sub-pixel amounts
   queueInt(sprite, x, y, z, color, scale, tex_rect, rotation, bucket) {
+    /* jshint bitwise:false */
     assert(sprite);
     scale =  scale || unit_vec4;
     let elem = {

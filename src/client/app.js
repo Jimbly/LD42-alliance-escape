@@ -124,6 +124,7 @@ export function main(canvas)
   const createSprite = glov_sprite.createSprite.bind(glov_sprite);
   const createAnimation = glov_sprite.createAnimation.bind(glov_sprite);
 
+  sound_manager.auto_mp3s = true;
   glov_ui.bindSounds(sound_manager, {
     button_click: 'button_click',
     rollover: 'rollover',
@@ -301,17 +302,18 @@ export function main(canvas)
       }
     }
 
+    sound_manager.loadSound('encounter');
+    sound_manager.loadSound('explosion');
+    sound_manager.loadSound('low_o2');
+    sound_manager.loadSound('music_special');
+    sound_manager.loadSound('overheat');
+    sound_manager.loadSound('shields_down');
+    sound_manager.loadSound('shoot_cargo');
+    sound_manager.loadSound('shoot_component');
     sound_manager.loadSound('shoot_mine');
     sound_manager.loadSound('shoot_miss');
     sound_manager.loadSound('shoot_shield');
-    sound_manager.loadSound('shoot_component');
-    sound_manager.loadSound('shoot_cargo');
-    sound_manager.loadSound('low_o2');
-    sound_manager.loadSound('overheat');
     sound_manager.loadSound('win');
-    sound_manager.loadSound('shields_down');
-    sound_manager.loadSound('explosion');
-    sound_manager.loadSound('music_special');
 
     const origin_0_0 = { origin: math_device.v2Build(0, 0) };
 
@@ -573,8 +575,7 @@ export function main(canvas)
               panel_types[slot.type].name + ' is overheating! Quickly turn it off' +
               ' to prevent further damage.' +
               (slot.type === 'shield' ? '\n\nYou may then want to turn on your other ' +
-                'SHIELD GENERATOR so you are protected while this one cools down.' : '')
-              ,
+                'SHIELD GENERATOR so you are protected while this one cools down.' : ''),
             buttons: {
               'Okay': null,
             },
