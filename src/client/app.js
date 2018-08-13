@@ -2105,7 +2105,7 @@ export function main(canvas)
 
   function loading() {
     let load_count = glov_sprite.loading() + sound_manager.loading();
-    $('#loading').text(`Loading (${load_count})...`);
+    $('#loading_text').text(`Loading (${load_count})...`);
     if (!load_count) {
       $('.screen').hide();
       initState();
@@ -2120,8 +2120,6 @@ export function main(canvas)
 
   function loadingInit() {
     initGraphics();
-    $('.screen').hide();
-    $('#title').show();
     app.game_state = loading;
     loading();
   }
